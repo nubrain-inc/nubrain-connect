@@ -9,12 +9,12 @@ import pygame
 
 from nubrain.device.device_interface import create_eeg_device
 from nubrain.experiment_image.data import eeg_data_logging
-from nubrain.experiment_image.image_config import ImageConfig
 from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
     sample_next_image,
     shuffle_with_repetitions,
 )
+from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
 from nubrain.misc.datetime import get_formatted_current_datetime
 
@@ -52,7 +52,7 @@ def experiment_image(config: dict):
 
     eeg_device_address = config.get("eeg_device_address", None)
 
-    image_config = ImageConfig()
+    global_config = GlobalConfig()
 
     # ----------------------------------------------------------------------------------
     # *** Test if output path exists
@@ -276,7 +276,7 @@ def experiment_image(config: dict):
 
                     # Insert stimulus start marker and get its timestamp.
                     marker_val, marker_ts = eeg_device.insert_marker(
-                        image_config.stim_start_marker
+                        global_config.stim_start_marker
                     )
                     if marker_val is not None:
                         data_logging_queue.put(
@@ -343,7 +343,7 @@ def experiment_image(config: dict):
                     t_stim_end_actual = time()
 
                     marker_val, marker_ts = eeg_device.insert_marker(
-                        image_config.stim_end_marker
+                        global_config.stim_end_marker
                     )
                     if marker_val is not None:
                         data_logging_queue.put(
