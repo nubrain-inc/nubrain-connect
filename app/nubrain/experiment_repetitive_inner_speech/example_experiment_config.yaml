@@ -1,0 +1,100 @@
+# Device configuration
+device_type: "dsi24" # Options: "cyton", "dsi24", "synthetic"
+lsl_stream_name: "WS-default" # LSL stream name from DSI-Streamer
+
+utility_frequency: 50.0 # Hz
+
+output_directory: "C:/Users/nubra/Documents/recordings_repetitive_inner_speech_v1"
+path_stimuli: "C:/Users/nubra/Documents/repetitive_inner_speech/"
+
+# Storage bucket where to upload hdf5 file at the end of each run
+storage_bucket_name: "nubrain-eeg"
+# Name of the storage object ("blob") to create
+storage_blob_name: "eeg/raw/repetitive_inner_speech/{device_type}/{filename}"
+# File with credentials for uploading to storage bucket
+storage_bucket_credentials: "C:/Users/nubra/Documents/gcloud/secret-gcs-upload-eeg.json"
+
+
+
+# /////
+
+
+# Timing parameters:
+initial_rest_duration: 3.0
+
+stimulus_duration: 0.5
+stimulus_jitter: 0.1 # Random jitter up to x seconds added to stimulus duration
+
+isi_duration: 0.0
+isi_jitter: 0.0 # Random jitter up to x seconds added to ISI
+
+inter_block_rest_duration: 6.0
+n_chars_long_word_threshold: 9 # Extend stimulus duration for long words longer than x characters.
+extra_duration_per_char: 0.1 # Extra stimulus duration per character above threshold.
+max_extra_stimulus_duration: 0.4 # Never prolong stimulus duration for more than x seconds (irrespective of number of characters)
+
+# section_idx_start: 0  # Moved to `session_config.yaml` for ease of use.
+stimuli_per_block: 101
+stimulus_font_sizes: [56, 64, 72]
+stimulus_font_min_spacing: 0.0
+stimulus_font_max_spacing: 32.0
+
+# Not needed for DSI-24, leave as null or omit
+# eeg_device_address:
+
+
+
+# ////////////////
+
+# Device configuration
+device_type: "dsi24" # Options: "cyton", "dsi24", "synthetic"
+lsl_stream_name: "DSI-24" # LSL stream name from DSI-Streamer
+
+utility_frequency: 60.0 # Hz
+
+subject_id: "sub-001"
+session_id: "session-001"
+
+# Use Windows-style paths
+output_directory: "C:\\experiments\\output"
+image_directory: "C:\\experiments\\images"
+
+# EEG channel mapping is optional for DSI-24. Will try to get channel names from the LSL
+# stream.
+# eeg_channel_mapping:
+#   0: "Fp1"
+#   1: "Fp2"
+#   2: "F7"
+#   3: "F3"
+#   4: "Fz"
+#   5: "F4"
+#   6: "F8"
+#   7: "T3"
+#   8: "C3"
+#   9: "Cz"
+#   10: "C4"
+#   11: "T4"
+#   12: "T5"
+#   13: "P3"
+#   14: "Pz"
+#   15: "P4"
+#   16: "T6"
+#   17: "O1"
+#   18: "O2"
+#   19: "Trigger"  # If DSI-24 has a trigger channel
+
+# Condition durations in seconds:
+initial_rest_duration: 5.0
+image_duration: 1.0
+isi_duration: 0.5
+isi_jitter: 0.1 # Random jitter up to x seconds added to ISI
+inter_block_grey_duration: 5.0
+
+n_blocks: 20
+images_per_block: 20
+n_target_events: 10
+
+# Response window for target events:
+response_window_duration: 1.2
+# Not needed for DSI-24, leave as null or omit
+# eeg_device_address:
