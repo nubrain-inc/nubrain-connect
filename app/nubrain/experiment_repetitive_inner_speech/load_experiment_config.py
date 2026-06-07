@@ -24,7 +24,6 @@ class EegExperimentConfig:
 
     # Device configuration
     device_type: str
-    lsl_stream_name: Optional[str] = "WS-default"
 
     utility_frequency: float
 
@@ -56,14 +55,16 @@ class EegExperimentConfig:
     response_window_duration: float
 
     stimulus_font_sizes: int
-    stimulus_font_color: tuple
+    stimulus_font_color: list
 
-    background_color: tuple
+    background_color: list
 
     eeg_device_address: Optional[str] = None
 
     # Use default_factory for mutable types
     eeg_channel_mapping: Optional[Dict[int, str]] = field(default_factory=dict)
+
+    lsl_stream_name: Optional[str] = "WS-default"
 
     def __post_init__(self):
         """

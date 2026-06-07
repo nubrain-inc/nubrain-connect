@@ -1,6 +1,5 @@
 import multiprocessing as mp
 import os
-import random
 import traceback
 from time import sleep, time
 
@@ -12,13 +11,23 @@ from nubrain.experiment_image.data import eeg_data_logging
 from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
     sample_next_image,
+    sample_with_min_distance,
     shuffle_with_repetitions,
 )
+from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
+    load_config_repetitive_inner_speech_yaml,
+)
+from nubrain.experiment_text_comprehension.data import eeg_data_logging
 from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
 from nubrain.misc.datetime import get_formatted_current_datetime
 
-mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
+# mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
+
+yaml_file_path = "/home/john/github/nubrain-connect/app/nubrain/experiment_repetitive_inner_speech/example_experiment_config.yaml"
+config = load_config_repetitive_inner_speech_yaml(yaml_file_path=yaml_file_path)
+config["subject_id"] = "sub-999"
+config["session_id"] = "1"
 
 
 def experiment_image(config: dict):
@@ -26,30 +35,38 @@ def experiment_image(config: dict):
     # *** Get config
 
     device_type = config["device_type"]
-    lsl_stream_name = config.get("lsl_stream_name", "DSI-24")
+    lsl_stream_name = config["lsl_stream_name"]
 
     subject_id = config["subject_id"]
     session_id = config["session_id"]
 
-    output_directory = config["output_directory"]
-    image_directory = config["image_directory"]
-
-    eeg_channel_mapping = config.get("eeg_channel_mapping", None)
-
     utility_frequency = config["utility_frequency"]
 
-    initial_rest_duration = config["initial_rest_duration"]
-    image_duration = config["image_duration"]
-    isi_duration = config["isi_duration"]
-    isi_jitter = config["isi_jitter"]
-    inter_block_grey_duration = config["inter_block_grey_duration"]
+    output_directory = config["output_directory"]
+    path_stimuli = config["path_stimuli"]
 
+    storage_bucket_name = config["storage_bucket_name"]
+    storage_blob_name = config["storage_blob_name"]
+    storage_bucket_credentials = config["storage_bucket_credentials"]
+
+    stimulus_duration = config["stimulus_duration"]
+    post_stim_interval = config["post_stim_interval"]
+    n_repetitions_per_trial = config["n_repetitions_per_trial"]
+    cue_duration = config["cue_duration"]
+    repeat_duration = config["repeat_duration"]
+    inter_trial_interval = config["inter_trial_interval"]
+    inter_trial_jitter = config["inter_trial_jitter"]
+    n_trials_per_block = config["n_trials_per_block"]
+    inter_block_rest_duration = config["inter_block_rest_duration"]
     n_blocks = config["n_blocks"]
-    images_per_block = config["images_per_block"]
     n_target_events = config["n_target_events"]
-
     response_window_duration = config["response_window_duration"]
 
+    stimulus_font_sizes = config["stimulus_font_sizes"]
+    stimulus_font_color = config["stimulus_font_color"]
+    background_color = config["background_color"]
+
+    eeg_channel_mapping = config.get("eeg_channel_mapping", None)
     eeg_device_address = config.get("eeg_device_address", None)
 
     global_config = GlobalConfig()
@@ -69,11 +86,18 @@ def experiment_image(config: dict):
     # ----------------------------------------------------------------------------------
     # *** Get input images & their categories
 
-    images_and_categories = get_all_images(image_directory=image_directory)
+    images_and_categories = get_all_images(image_directory=path_stimuli)
 
     if not images_and_categories:
-        raise AssertionError(f"Found no images at {image_directory}")
+        raise AssertionError(f"Found no images at {path_stimuli}")
     print(f"Found {len(images_and_categories)} images")
+
+    # images_and_categories = [
+    #     {
+    #         "image_file_path": "/path/to/image.png",
+    #         "image_category": "horse",
+    #     },
+    # ]
 
     # ----------------------------------------------------------------------------------
     # *** Create pseudo-random condition order
@@ -81,19 +105,18 @@ def experiment_image(config: dict):
     # List with all unique image categories (e.g. `["apple", "banana", ...]`).
     image_categories = list(set([x["image_category"] for x in images_and_categories]))
 
-    n_trials = n_blocks * images_per_block
+    n_trials = n_blocks * n_trials_per_block
 
     # Order of image categories.
     trial_order = create_balanced_list(
         image_categories=image_categories,
         target_length=n_trials,
     )
-    random.shuffle(trial_order)
 
+    # Pseudo-random trial order (no repetitions).
     trial_order = shuffle_with_repetitions(
         list_with_duplicates=trial_order,
-        repetitions=n_target_events,
-        minimize_runs=True,
+        repetitions=0,
     )
 
     # Mapping from image categories to image file paths, e.g. `{"apple":
@@ -110,6 +133,17 @@ def experiment_image(config: dict):
 
     previous_image_file_path = None
     previous_image_category = None
+
+    # ----------------------------------------------------------------------------------
+    # *** Create target events
+
+    # Indices of target events.
+    target_trial_idcs = sample_with_min_distance(
+        n_samples=n_target_events,
+        lower=10,  # No targets at very beginning
+        upper=(n_trials - 10),  # No targest at the very end
+        min_distance=1,
+    )
 
     # ----------------------------------------------------------------------------------
     # *** Prepare EEG measurement
@@ -171,30 +205,39 @@ def experiment_image(config: dict):
     data_logging_queue = mp.Queue()
 
     subprocess_params = {
-        "device_type": device_type,
-        "subject_id": subject_id,
-        "session_id": session_id,
-        "image_directory": image_directory,
         # EEG parameters
-        "eeg_board_description": eeg_board_description,
-        "eeg_sampling_rate": eeg_sampling_rate,
-        "n_channels_total": n_channels_total,
-        "eeg_channels": eeg_channels,
-        "marker_channel": marker_channel,
+        "device_type": device_type,
+        "lsl_stream_name": lsl_stream_name,
+        "utility_frequency": utility_frequency,
         "eeg_channel_mapping": eeg_channel_mapping,
         "eeg_device_address": eeg_device_address,
-        # Timing parameters
-        "initial_rest_duration": initial_rest_duration,
-        "image_duration": image_duration,
-        "isi_duration": isi_duration,
-        "inter_block_grey_duration": inter_block_grey_duration,
-        # Experiment structure
+        # Session parameters
+        "subject_id": subject_id,
+        "session_id": session_id,
+        # Experiment structure / timing
+        "target_trial_idcs": target_trial_idcs,
+        "stimulus_duration": stimulus_duration,
+        "post_stim_interval": post_stim_interval,
+        "n_repetitions_per_trial": n_repetitions_per_trial,
+        "cue_duration": cue_duration,
+        "repeat_duration": repeat_duration,
+        "inter_trial_interval": inter_trial_interval,
+        "inter_trial_jitter": inter_trial_jitter,
+        "n_trials_per_block": n_trials_per_block,
+        "inter_block_rest_duration": inter_block_rest_duration,
         "n_blocks": n_blocks,
-        "images_per_block": images_per_block,
+        "n_target_events": n_target_events,
+        "response_window_duration": response_window_duration,
+        # Storage
+        "output_directory": output_directory,
+        "path_stimuli": path_stimuli,
+        "storage_bucket_name": storage_bucket_name,
+        "storage_blob_name": storage_blob_name,
+        "storage_bucket_credentials": storage_bucket_credentials,
         # Misc
-        "utility_frequency": utility_frequency,
-        "path_out_data": path_out_data,
-        "data_logging_queue": data_logging_queue,
+        "stimulus_font_sizes": stimulus_font_sizes,
+        "stimulus_font_color": stimulus_font_color,
+        "background_color": background_color,
     }
 
     logging_process = mp.Process(target=eeg_data_logging, args=(subprocess_params,))

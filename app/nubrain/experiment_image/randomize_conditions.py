@@ -4,6 +4,7 @@ from typing import List
 
 
 def shuffle_with_repetitions(
+    *,
     list_with_duplicates: List,
     repetitions: int = 0,
     minimize_runs: bool = True,
@@ -297,3 +298,57 @@ def sample_next_image(
         else:
             break
     return next_image_file_path
+
+
+def sample_with_min_distance(
+    *,
+    n_samples: int,
+    lower: int,
+    upper: int,
+    min_distance: int = 1,
+):
+    """
+    Sample `n_samples` unique integers from [lower, upper] such that every pair of
+    sampled values (when sorted) is at least `min_distance` apart.
+
+    Uses reduction; sample from a compressed range without constraints, then expand the
+    values to enforce the minimum gap.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of integers to sample.
+    lower : int
+        Lower bound of the interval (inclusive).
+    upper : int
+        Upper bound of the interval (inclusive).
+    min_distance : int
+        Minimum distance between any two consecutive samples (sorted order).
+
+    Returns
+    -------
+    list[int]
+        A list of `n_samples` sampled integers satisfying the distance constraint,
+        returned in sorted order.
+    """
+    if n_samples <= 0:
+        return []
+
+    range_size = upper - lower + 1
+    required_size = n_samples + (n_samples - 1) * (min_distance - 1)
+
+    if required_size > range_size:
+        raise ValueError(
+            f"Cannot sample {n_samples} values from [{lower}, {upper}] with "
+            f"min_distance={min_distance} (need at least {required_size} "
+            f"integers in the range, but only {range_size} available)."
+        )
+
+    # Sample from a compressed range where no gap constraint is needed.
+    reduced_upper = upper - (n_samples - 1) * (min_distance - 1)
+    samples = sorted(random.sample(range(lower, reduced_upper + 1), n_samples))
+
+    # Expand: shift each successive value to restore the minimum gap.
+    result = [val + i * (min_distance - 1) for i, val in enumerate(samples)]
+
+    return result
