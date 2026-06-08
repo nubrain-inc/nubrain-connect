@@ -1,14 +1,13 @@
 import random
 from collections import Counter
-from typing import List
 
 
 def shuffle_with_repetitions(
     *,
-    list_with_duplicates: List,
+    list_with_duplicates: list,
     repetitions: int = 0,
     minimize_runs: bool = True,
-) -> List:
+) -> list:
     """
     Shuffle a list to have exactly 'repetitions' number of consecutive duplicates.
 
@@ -241,7 +240,7 @@ def shuffle_with_repetitions(
     )
 
 
-def count_runs(lst: List, min_length: int = 3) -> int:
+def count_runs(lst: list, min_length: int = 3) -> int:
     """Count the number of runs of min_length or more consecutive identical items."""
     if not lst:
         return 0
