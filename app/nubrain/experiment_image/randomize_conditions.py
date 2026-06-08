@@ -11,8 +11,11 @@ def shuffle_with_repetitions(
     """
     Shuffle a list to have exactly 'repetitions' number of consecutive duplicates.
 
-    A repetition is counted as each time an element is immediately followed by the same
-    element. For example, [1, 1, 2, 2, 2] has 3 repetitions.
+    A repetition is counted as such each time an element is immediately followed by the
+    same element. For example, [1, 1, 2, 2, 2] has 3 repetitions.
+
+    Notes: Only accepts a list of (hashable) strings. If conditions are defined by
+    dictionaries, use below wrapper function (`shuffle_dicts_with_repetitions()`).
 
     Args:
         list_with_duplicates: Input list containing duplicates
@@ -238,6 +241,34 @@ def shuffle_with_repetitions(
         f"Could not generate a sequence with exactly {repetitions} repetitions "
         f"after {max_attempts} attempts. Try running the function again."
     )
+
+
+def shuffle_dicts_with_repetitions(
+    *,
+    list_with_duplicates: list[dict],
+    repetitions: int = 0,
+    minimize_runs: bool = True,
+) -> list[dict]:
+    """
+    A wrapper to shuffle lists of unhashable dictionaries with exact repetitions.
+    """
+    unique_dicts = []
+    id_list = []
+
+    # Map each dictionary to a unique integer ID.
+    for d in list_with_duplicates:
+        if d not in unique_dicts:
+            unique_dicts.append(d)
+        id_list.append(unique_dicts.index(d))
+
+    shuffled_ids = shuffle_with_repetitions(
+        list_with_duplicates=id_list,
+        repetitions=repetitions,
+        minimize_runs=minimize_runs,
+    )
+
+    # Map the integer IDs back to the original dictionaries.
+    return [unique_dicts[i] for i in shuffled_ids]
 
 
 def count_runs(lst: list, min_length: int = 3) -> int:

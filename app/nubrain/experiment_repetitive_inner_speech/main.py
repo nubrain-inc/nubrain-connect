@@ -10,7 +10,7 @@ from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
     sample_next_image,
     sample_with_min_distance,
-    shuffle_with_repetitions,
+    shuffle_dicts_with_repetitions,
 )
 from nubrain.experiment_repetitive_inner_speech.data import eeg_data_logging
 from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
@@ -141,10 +141,8 @@ def experiment_image(config: dict):
         target_length=n_trials,
     )
 
-
-    # TODO: TypeError: unhashable type: 'dict'
     # Pseudo-random trial order (no repetitions).
-    trial_order = shuffle_with_repetitions(
+    trial_order = shuffle_dicts_with_repetitions(
         list_with_duplicates=trial_order,
         repetitions=0,
     )
