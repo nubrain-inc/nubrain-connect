@@ -323,8 +323,6 @@ def experiment_image(config: dict):
         pygame.display.set_caption("Image Presentation Experiment")
         pygame.mouse.set_visible(False)
 
-        idx_trial = 0
-
         try:
             # Initial grey screen.
             pygame.time.wait(100)
@@ -340,122 +338,173 @@ def experiment_image(config: dict):
             # Pause for specified number of milliseconds.
             pygame.time.delay(int(round(inter_block_rest_duration * 1000.0)))
 
-            # Block loop.
-            for idx_block in range(n_blocks):
-                # Image loop (within a block).
-                for image_count in range(n_trials_per_block):
-                    if not running:  # Check for quit event
-                        break
+            # Loop over trials.
+            for idx_trial in range(n_trials):
+                if not running:  # Check for quit event
+                    break
 
-                    # ------------------------------------------------------------------
-                    # *** (1) Stimulus presentation (image or word)
+                # ------------------------------------------------------------------
+                # *** (1) Stimulus presentation (image or word)
 
-                    # E.g. "apple".
-                    next_category = trial_order[idx_trial]["stimulus_class"]
-                    # "text" or "image".
-                    next_type = trial_order[idx_trial]["stimulus_type"]
+                # E.g. "apple".
+                next_category = trial_order[idx_trial]["stimulus_class"]
+                # "text" or "image".
+                next_type = trial_order[idx_trial]["stimulus_type"]
 
-                    # Sample the next image.
-                    next_file_path = sample_next_image(
-                        next_image_category=next_category,
-                        category_to_filepath=category_to_filepath,
-                        previous_image_file_path=previous_image_file_path,
+                # Sample the next image.
+                next_file_path = sample_next_image(
+                    next_image_category=next_category,
+                    category_to_filepath=category_to_filepath,
+                    previous_image_file_path=previous_image_file_path,
+                )
+
+                # Load the next image.
+                image_and_metadata = load_and_scale_image(
+                    image_file_path=next_file_path,
+                    screen_width=screen_width,
+                    screen_height=screen_height,
+                )
+                if image_and_metadata is None:
+                    raise AssertionError(f"Failed to load stimulus: {next_file_path}")
+
+                current_image = image_and_metadata["image"]
+
+                img_rect = current_image.get_rect(
+                    center=(screen_width // 2, screen_height // 2)
+                )
+                screen.fill(background_color)
+                screen.blit(current_image, img_rect)
+                pygame.display.flip()
+                # Start of stimulus presentation.
+                t_stim_start = eeg_device.lsl_local_clock()
+
+                # When using an OpenBCI device, we insert a stimulus marker into the
+                # time series data on the EEG board. These markers can be used
+                # during analysis to identify stimulus events. For the DSI-24
+                # device, we instead use LSL timestamps stored in the hdf5 file for
+                # identifying stimulus events.
+                if device_type in ["cyton", "synthetic"]:
+                    eeg_device.insert_marker(global_config.stim_start_marker)
+                else:
+                    data_logging_queue.put(
+                        {
+                            "type": "marker",
+                            "marker_value": global_config.stim_start_marker,
+                            "timestamp": t_stim_start,
+                        }
                     )
 
-                    # Load the next image.
-                    image_and_metadata = load_and_scale_image(
-                        image_file_path=next_file_path,
-                        screen_width=screen_width,
-                        screen_height=screen_height,
+                # Send pre-stimulus EEG data (to avoid buffer overflow).
+                eeg_data, eeg_ts = eeg_device.get_board_data()
+                if eeg_data.size > 0:
+                    data_logging_queue.put(
+                        {
+                            "type": "eeg",
+                            "eeg_data": eeg_data,
+                            "eeg_timestamps": eeg_ts,
+                        }
                     )
-                    if image_and_metadata is None:
-                        raise AssertionError(
-                            f"Failed to load stimulus: {next_file_path}"
-                        )
 
-                    current_image = image_and_metadata["image"]
+                stimulus_data = {
+                    "stimulus_start_time": t_stim_start,
+                    "stimulus_class": next_category,  # E.g. "apple"
+                    "stimulus_type": next_type,  # "text" or "image"
+                }
 
-                    img_rect = current_image.get_rect(
-                        center=(screen_width // 2, screen_height // 2)
-                    )
-                    screen.fill(background_color)
-                    screen.blit(current_image, img_rect)
-                    pygame.display.flip()
-                    # Start of stimulus presentation.
-                    t_stim_start = eeg_device.lsl_local_clock()
-
-                    # When using an OpenBCI device, we insert a stimulus marker into the
-                    # time series data on the EEG board. These markers can be used
-                    # during analysis to identify stimulus events. For the DSI-24
-                    # device, we instead use LSL timestamps stored in the hdf5 file for
-                    # identifying stimulus events.
-                    if device_type in ["cyton", "synthetic"]:
-                        eeg_device.insert_marker(global_config.stim_start_marker)
-                    else:
-                        data_logging_queue.put(
-                            {
-                                "type": "marker",
-                                "marker_value": global_config.stim_start_marker,
-                                "timestamp": t_stim_start,
-                            }
-                        )
-
-                    # Send pre-stimulus EEG data (to avoid buffer overflow).
-                    eeg_data, eeg_ts = eeg_device.get_board_data()
-                    if eeg_data.size > 0:
-                        data_logging_queue.put(
-                            {
-                                "type": "eeg",
-                                "eeg_data": eeg_data,
-                                "eeg_timestamps": eeg_ts,
-                            }
-                        )
-
-                    stimulus_data = {
-                        "stimulus_start_time": t_stim_start,
-                        "stimulus_class": next_category,  # E.g. "apple"
-                        "stimulus_type": next_type,  # "text" or "image"
-                    }
-
-                    # Wait for image duration, but check for responses continuously.
-                    t_stim_end_expected = t_stim_start + stimulus_duration
-                    while eeg_device.lsl_local_clock() < t_stim_end_expected:
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
+                # Wait for image duration, but check for responses continuously.
+                t_stim_end_expected = t_stim_start + stimulus_duration
+                while eeg_device.lsl_local_clock() < t_stim_end_expected:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            running = False
+                        if event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_ESCAPE:
                                 running = False
-                            if event.type == pygame.KEYDOWN:
-                                if event.key == pygame.K_ESCAPE:
-                                    running = False
-                        if not running:
-                            break
                     if not running:
                         break
+                if not running:
+                    break
 
-                    # ------------------------------------------------------------------
-                    # *** (2) Post-stimulus delay
+                # ------------------------------------------------------------------
+                # *** (2) Post-stimulus delay
 
-                    # End of stimulus presentation. Display empty screen.
-                    screen.fill(background_color)
-                    pygame.display.flip()
-                    t_stim_end_actual = eeg_device.lsl_local_clock()
+                # End of stimulus presentation. Display empty screen.
+                screen.fill(background_color)
+                pygame.display.flip()
+                t_stim_end_actual = eeg_device.lsl_local_clock()
 
-                    stimulus_data["stimulus_end_time"] = t_stim_end_actual
-                    stimulus_data["stimulus_duration_s"] = (
-                        t_stim_end_actual - stimulus_data["stimulus_start_time"]
+                stimulus_data["stimulus_end_time"] = t_stim_end_actual
+                stimulus_data["stimulus_duration_s"] = (
+                    t_stim_end_actual - stimulus_data["stimulus_start_time"]
+                )
+
+                if device_type in ["cyton", "synthetic"]:
+                    eeg_device.insert_marker(global_config.stim_end_marker)
+                else:
+                    data_logging_queue.put(
+                        {
+                            "type": "marker",
+                            "marker_value": global_config.stim_end_marker,
+                            "timestamp": t_stim_end_actual,
+                        }
                     )
 
+                # Send EEG data from stimulus presentation period.
+                eeg_data, eeg_ts = eeg_device.get_board_data()
+                if eeg_data.size > 0:
+                    data_logging_queue.put(
+                        {
+                            "type": "eeg",
+                            "eeg_data": eeg_data,
+                            "eeg_timestamps": eeg_ts,
+                        }
+                    )
+
+                # Time until when to show empty screen (post-stimulus delay).
+                t_isi_end = t_stim_end_actual + post_stim_interval
+
+                # Continue checking for quit events.
+                t_stim_end_expected = t_stim_start + stimulus_duration
+                while eeg_device.lsl_local_clock() < t_stim_end_expected:
+                    for event in pygame.event.get():
+                        if event.type == pygame.QUIT:
+                            running = False
+                        if event.type == pygame.KEYDOWN:
+                            if event.key == pygame.K_ESCAPE:
+                                running = False
+                    if not running:
+                        break
+                if not running:
+                    break
+
+                # ------------------------------------------------------------------
+                # *** (3) Silent speech
+
+                stimulus_data["silent_speech_cue_onsets"] = []
+
+                for idx_repetition in range(n_repetitions_per_trial):
+                    # Play the tone that cues the beginning of an inner speech
+                    # repetition. Note that `.play()` is non-blocking.
+                    audio_cue_tone.play()
+
+                    # Because `.play()` is non-blocking, we only log the onset of
+                    # the audio cue (and not the end).
+                    t_cue_start = eeg_device.lsl_local_clock()
+
+                    stimulus_data["silent_speech_cue_onsets"].append(t_cue_start)
+
                     if device_type in ["cyton", "synthetic"]:
-                        eeg_device.insert_marker(global_config.stim_end_marker)
+                        eeg_device.insert_marker(global_config.cue_start_marker)
                     else:
                         data_logging_queue.put(
                             {
                                 "type": "marker",
-                                "marker_value": global_config.stim_end_marker,
-                                "timestamp": t_stim_start,
+                                "marker_value": global_config.cue_start_marker,
+                                "timestamp": t_cue_start,
                             }
                         )
 
-                    # Send EEG data from stimulus presentation period.
+                    # Send EEG data from silent speech period.
                     eeg_data, eeg_ts = eeg_device.get_board_data()
                     if eeg_data.size > 0:
                         data_logging_queue.put(
@@ -465,13 +514,10 @@ def experiment_image(config: dict):
                                 "eeg_timestamps": eeg_ts,
                             }
                         )
-
-                    # Time until when to show empty screen (post-stimulus delay).
-                    t_isi_end = t_stim_end_actual + post_stim_interval
 
                     # Continue checking for quit events.
-                    t_stim_end_expected = t_stim_start + stimulus_duration
-                    while eeg_device.lsl_local_clock() < t_stim_end_expected:
+                    t_repeat_end_expected = t_cue_start + repeat_duration
+                    while eeg_device.lsl_local_clock() < t_repeat_end_expected:
                         for event in pygame.event.get():
                             if event.type == pygame.QUIT:
                                 running = False
@@ -483,28 +529,26 @@ def experiment_image(config: dict):
                     if not running:
                         break
 
-                    # ------------------------------------------------------------------
-                    # *** (3) Silent speech
+                # ------------------------------------------------------------------
+                # *** (4) Attention task
 
-                    for idx_repetition in range(n_repetitions_per_trial):
-                        # Play the tone that cues the beginning of an inner speech
-                        # repetition. Note that `.play()` is non-blocking.
-                        audio_cue_tone.play()
+                # Is this a target trial?
+                if idx_trial in target_trial_idcs:
+                    raise NotImplementedError
 
-                    global_config.cue_start_marker
-                    global_config.cue_end_marker
+                # ------------------------------------------------------------------
+                # *** (5) Inter-stimulus interval
 
-                    for idx_repetition in range(n_repetitions_per_trial):
-                        raise NotImplementedError
-
-                    # ------------------------------------------------------------------
-                    # *** (4) Attention task
-
-                    # ------------------------------------------------------------------
-                    # *** (5) Inter-stimulus interval
+                inter_trial_interval
+                inter_trial_jitter
+                # + np.random.uniform(low=0.0, high=inter_trial_jitter)
 
                 # ----------------------------------------------------------------------
                 # *** (6) Inter-block interval
+
+                if ((idx_trial + 1) % n_trials_per_block) == 0:
+                    # TODO: Break
+                    raise NotImplementedError
 
             running = False
 
