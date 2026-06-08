@@ -260,27 +260,27 @@ def count_runs(lst: List, min_length: int = 3) -> int:
 
 def create_balanced_list(*, image_categories: list, target_length: int):
     """
-    Creates a list with approximately equal instances of each string.
+    Creates a list with approximately equal instances of each item.
 
     Args:
-        strings: List of strings to distribute
+        image_categories: List of items to distribute
         target_length: Desired length of the output list
 
     Returns:
-        List with approximately equal distribution of input strings
+        List with approximately equal distribution of input items
     """
     if not image_categories or target_length <= 0:
         return []
 
     n = len(image_categories)
-    base_count = target_length // n  # Minimum count for each string
+    base_count = target_length // n  # Minimum count for each item
     remainder = target_length % n  # Extra items to distribute
 
     result = []
-    for idx, string in enumerate(image_categories):
-        # First 'remainder' strings get one extra copy.
+    for idx, item in enumerate(image_categories):
+        # First 'remainder' items get one extra copy.
         count = base_count + (1 if idx < remainder else 0)
-        result.extend([string] * count)
+        result.extend([item] * count)
 
     return result
 
