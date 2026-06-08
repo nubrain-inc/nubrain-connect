@@ -31,9 +31,9 @@ repeat_duration: 1.0
 inter_trial_interval: 0.5
 inter_trial_jitter: 0.0 # Random jitter up to x seconds added to inter trial interval
 
-n_trials_per_block: 10
+n_trials_per_block: 25
 inter_block_rest_duration: 5.0
-n_blocks: 10
+n_blocks: 4
 
 n_target_events: 5
 response_window_duration: 1.2 # Response window for target events
