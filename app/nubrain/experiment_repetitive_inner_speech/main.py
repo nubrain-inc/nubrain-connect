@@ -1,10 +1,11 @@
 import multiprocessing as mp
 import os
 import traceback
-from time import sleep, time
+from time import sleep
 
 import pygame
 
+from nubrain.audio.tone import generate_tone
 from nubrain.device.device_interface import create_eeg_device
 from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
@@ -64,6 +65,10 @@ def experiment_image(config: dict):
     stimulus_font_color = config["stimulus_font_color"]
     background_color = config["background_color"]
 
+    audio_cue_frequency = config["audio_cue_frequency"]
+    audio_cue_duration = config["audio_cue_duration"]
+    audio_cue_amplitude = config["audio_cue_amplitude"]
+
     eeg_channel_mapping = config.get("eeg_channel_mapping", None)
     eeg_device_address = config.get("eeg_device_address", None)
 
@@ -108,7 +113,7 @@ def experiment_image(config: dict):
         print(
             f"Adjusting number of trials from {n_trials} to {n_trials + 1} "
             "(required for splitting into equal number of text and image trials)"
-            )
+        )
         n_trials += 1
 
     # List with all unique image categories (e.g. `["apple", "banana", ...]`).
@@ -122,18 +127,18 @@ def experiment_image(config: dict):
         print(
             f"Adjusting number of trials from {n_trials} to {n_image_categories * 2} "
             "(required for having one text & image trial each per category)"
-            )
+        )
         n_trials = n_image_categories * 2
-
 
     stimulus_categories = []
     for stimulus_class in image_categories:
         for stimulus_type in ["text", "image"]:
-            stimulus_categories.append({
-                "stimulus_class": stimulus_class,
-                "stimulus_type": stimulus_type,
-                })
-
+            stimulus_categories.append(
+                {
+                    "stimulus_class": stimulus_class,
+                    "stimulus_type": stimulus_type,
+                }
+            )
 
     # Order of image categories.
     trial_order = create_balanced_list(
@@ -243,6 +248,7 @@ def experiment_image(config: dict):
         "subject_id": subject_id,
         "session_id": session_id,
         # Experiment structure / timing
+        "trial_order": trial_order,
         "target_trial_idcs": target_trial_idcs,
         "stimulus_duration": stimulus_duration,
         "post_stim_interval": post_stim_interval,
@@ -262,10 +268,13 @@ def experiment_image(config: dict):
         "storage_bucket_name": storage_bucket_name,
         "storage_blob_name": storage_blob_name,
         "storage_bucket_credentials": storage_bucket_credentials,
-        # Misc
+        # Stimulus properties
         "stimulus_font_sizes": stimulus_font_sizes,
         "stimulus_font_color": stimulus_font_color,
         "background_color": background_color,
+        "audio_cue_frequency": audio_cue_frequency,
+        "audio_cue_duration": audio_cue_duration,
+        "audio_cue_amplitude": audio_cue_amplitude,
     }
 
     logging_process = mp.Process(target=eeg_data_logging, args=(subprocess_params,))
@@ -281,6 +290,28 @@ def experiment_image(config: dict):
     running = True
     while running:
         pygame.init()
+
+        # ------------------------------------------------------------------------------
+        # *** Prepare audio cues
+
+        # Use an audio cue for the start of the repetitive inner speech period.
+        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+
+        # Get the sample rate from the mixer settings.
+        sample_rate = pygame.mixer.get_init()[0]
+
+        audio_cue_tone_data = generate_tone(
+            frequency=audio_cue_frequency,  # Pitch of the tone in Hz
+            duration=audio_cue_duration,  # Duration of audio cue
+            amplitude=audio_cue_amplitude,  # Volume, from 0.0 to 1.0
+            sample_rate=sample_rate,
+        )
+
+        # Create a sound object from the numpy array.
+        audio_cue_tone = pygame.sndarray.make_sound(audio_cue_tone_data)
+
+        # ------------------------------------------------------------------------------
+        # *** Prepare visual stimulus generation
 
         # Get screen dimensions and set up full screen.
         screen_info = pygame.display.Info()
@@ -319,23 +350,27 @@ def experiment_image(config: dict):
                     # ------------------------------------------------------------------
                     # *** (1) Stimulus presentation (image or word)
 
+                    # E.g. "apple".
+                    next_category = trial_order[idx_trial]["stimulus_class"]
+                    # "text" or "image".
+                    next_type = trial_order[idx_trial]["stimulus_type"]
+
                     # Sample the next image.
-                    next_image_category = trial_order[idx_trial]
-                    next_image_file_path = sample_next_image(
-                        next_image_category=next_image_category,
+                    next_file_path = sample_next_image(
+                        next_image_category=next_category,
                         category_to_filepath=category_to_filepath,
                         previous_image_file_path=previous_image_file_path,
                     )
 
                     # Load the next image.
                     image_and_metadata = load_and_scale_image(
-                        image_file_path=next_image_file_path,
+                        image_file_path=next_file_path,
                         screen_width=screen_width,
                         screen_height=screen_height,
                     )
                     if image_and_metadata is None:
                         raise AssertionError(
-                            f"Failed to load stimulus: {next_image_file_path}"
+                            f"Failed to load stimulus: {next_file_path}"
                         )
 
                     current_image = image_and_metadata["image"]
@@ -346,18 +381,22 @@ def experiment_image(config: dict):
                     screen.fill(background_color)
                     screen.blit(current_image, img_rect)
                     pygame.display.flip()
-                    t_stim_start = time()  # Start of stimulus presentation.
+                    # Start of stimulus presentation.
+                    t_stim_start = eeg_device.lsl_local_clock()
 
-                    # Insert stimulus start marker and get its timestamp.
-                    marker_val, marker_ts = eeg_device.insert_marker(
-                        global_config.stim_start_marker
-                    )
-                    if marker_val is not None:
+                    # When using an OpenBCI device, we insert a stimulus marker into the
+                    # time series data on the EEG board. These markers can be used
+                    # during analysis to identify stimulus events. For the DSI-24
+                    # device, we instead use LSL timestamps stored in the hdf5 file for
+                    # identifying stimulus events.
+                    if device_type in ["cyton", "synthetic"]:
+                        eeg_device.insert_marker(global_config.stim_start_marker)
+                    else:
                         data_logging_queue.put(
                             {
                                 "type": "marker",
-                                "marker_value": marker_val,
-                                "timestamp": marker_ts,
+                                "marker_value": global_config.stim_start_marker,
+                                "timestamp": t_stim_start,
                             }
                         )
 
@@ -372,13 +411,88 @@ def experiment_image(config: dict):
                             }
                         )
 
+                    stimulus_data = {
+                        "stimulus_start_time": t_stim_start,
+                        "stimulus_class": next_category,  # E.g. "apple"
+                        "stimulus_type": next_type,  # "text" or "image"
+                    }
+
+                    # Wait for image duration, but check for responses continuously.
+                    t_stim_end_expected = t_stim_start + stimulus_duration
+                    while eeg_device.lsl_local_clock() < t_stim_end_expected:
+                        for event in pygame.event.get():
+                            if event.type == pygame.QUIT:
+                                running = False
+                            if event.type == pygame.KEYDOWN:
+                                if event.key == pygame.K_ESCAPE:
+                                    running = False
+                        if not running:
+                            break
+                    if not running:
+                        break
+
                     # ------------------------------------------------------------------
                     # *** (2) Post-stimulus delay
 
-                    # TODO
+                    # End of stimulus presentation. Display empty screen.
+                    screen.fill(background_color)
+                    pygame.display.flip()
+                    t_stim_end_actual = eeg_device.lsl_local_clock()
+
+                    stimulus_data["stimulus_end_time"] = t_stim_end_actual
+                    stimulus_data["stimulus_duration_s"] = (
+                        t_stim_end_actual - stimulus_data["stimulus_start_time"]
+                    )
+
+                    if device_type in ["cyton", "synthetic"]:
+                        eeg_device.insert_marker(global_config.stim_end_marker)
+                    else:
+                        data_logging_queue.put(
+                            {
+                                "type": "marker",
+                                "marker_value": global_config.stim_end_marker,
+                                "timestamp": t_stim_start,
+                            }
+                        )
+
+                    # Send EEG data from stimulus presentation period.
+                    eeg_data, eeg_ts = eeg_device.get_board_data()
+                    if eeg_data.size > 0:
+                        data_logging_queue.put(
+                            {
+                                "type": "eeg",
+                                "eeg_data": eeg_data,
+                                "eeg_timestamps": eeg_ts,
+                            }
+                        )
+
+                    # Time until when to show empty screen (post-stimulus delay).
+                    t_isi_end = t_stim_end_actual + post_stim_interval
+
+                    # Continue checking for quit events.
+                    t_stim_end_expected = t_stim_start + stimulus_duration
+                    while eeg_device.lsl_local_clock() < t_stim_end_expected:
+                        for event in pygame.event.get():
+                            if event.type == pygame.QUIT:
+                                running = False
+                            if event.type == pygame.KEYDOWN:
+                                if event.key == pygame.K_ESCAPE:
+                                    running = False
+                        if not running:
+                            break
+                    if not running:
+                        break
 
                     # ------------------------------------------------------------------
                     # *** (3) Silent speech
+
+                    for idx_repetition in range(n_repetitions_per_trial):
+                        # Play the tone that cues the beginning of an inner speech
+                        # repetition. Note that `.play()` is non-blocking.
+                        audio_cue_tone.play()
+
+                    global_config.cue_start_marker
+                    global_config.cue_end_marker
 
                     for idx_repetition in range(n_repetitions_per_trial):
                         raise NotImplementedError

@@ -59,6 +59,10 @@ class EegExperimentConfig:
 
     background_color: list
 
+    audio_cue_frequency: int
+    audio_cue_duration: float
+    audio_cue_amplitude: float
+
     eeg_device_address: Optional[str] = None
 
     # Use default_factory for mutable types
