@@ -351,14 +351,14 @@ def eeg_data_logging(subprocess_params: dict):
 
                     if attention_task_log is None:
                         # Current trial is not a target event.
-                        aidx = np.nan
+                        aidx = -1  # Numpy integer does not support nan
                     else:
                         aidx = attention_task_log["response_log"]["selected_answer_idx"]
                     data_to_write[0]["attention_task_selected_answer_idx"] = aidx
 
                     if attention_task_log is None:
                         # Current trial is not a target event.
-                        is_correct = None
+                        is_correct = False  # Cannot use None on boolean hdf5 field
                     else:
                         is_correct = attention_task_log["response_log"]["is_correct"]
                     data_to_write[0]["attention_task_is_correct"] = is_correct
