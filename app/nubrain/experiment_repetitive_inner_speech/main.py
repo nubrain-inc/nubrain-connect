@@ -23,6 +23,7 @@ from nubrain.experiment_text_comprehension.wrap_text import draw_text_wrapped
 from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
 from nubrain.misc.datetime import get_formatted_current_datetime
+from nubrain.text.rendering import render_spaced_text
 
 # mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
 
@@ -64,7 +65,11 @@ def experiment_image(config: dict):
     n_target_events = config["n_target_events"]
     response_window_duration = config["response_window_duration"]
 
-    stimulus_font_sizes = config["stimulus_font_sizes"]
+    stimulus_font_name = config["stimulus_font_name"]
+    stimulus_font_is_bold = config["stimulus_font_is_bold"]
+    stimulus_font_is_italic = config["stimulus_font_is_italic"]
+    stimulus_font_size = config["stimulus_font_size"]
+    stimulus_font_spacing = config["stimulus_font_spacing"]
     stimulus_font_color = config["stimulus_font_color"]
     background_color = config["background_color"]
 
@@ -272,7 +277,11 @@ def experiment_image(config: dict):
         "storage_blob_name": storage_blob_name,
         "storage_bucket_credentials": storage_bucket_credentials,
         # Stimulus properties
-        "stimulus_font_sizes": stimulus_font_sizes,
+        "stimulus_font_name": stimulus_font_name,
+        "stimulus_font_is_bold": stimulus_font_is_bold,
+        "stimulus_font_is_italic": stimulus_font_is_italic,
+        "stimulus_font_size": stimulus_font_size,
+        "stimulus_font_spacing": stimulus_font_spacing,
         "stimulus_font_color": stimulus_font_color,
         "background_color": background_color,
         "audio_cue_frequency": audio_cue_frequency,
@@ -353,6 +362,16 @@ def experiment_image(config: dict):
             pure_tone_end = pygame.sndarray.make_sound(tone_data_end)
 
         # ------------------------------------------------------------------------------
+        # *** Prepare font
+
+        stimulus_font = pygame.font.SysFont(
+            stimulus_font_name,
+            stimulus_font_size,
+            bold=stimulus_font_is_bold,
+            italic=stimulus_font_is_italic,
+        )
+
+        # ------------------------------------------------------------------------------
         # *** Prepare visual stimulus generation
 
         # Get screen dimensions and set up full screen.
@@ -393,32 +412,51 @@ def experiment_image(config: dict):
                 # "text" or "image".
                 stimulus_type = trial_order[idx_trial]["stimulus_type"]
 
-                # TODO: control flow text / image trial
-                raise NotImplementedError
+                # Show image.
+                if stimulus_type == "image":
+                    # Sample the next image.
+                    next_file_path = sample_next_image(
+                        next_image_category=stimulus_class,
+                        category_to_filepath=category_to_filepath,
+                        previous_image_file_path=previous_image_file_path,
+                    )
 
-                # Sample the next image.
-                next_file_path = sample_next_image(
-                    next_image_category=stimulus_class,
-                    category_to_filepath=category_to_filepath,
-                    previous_image_file_path=previous_image_file_path,
-                )
+                    # Load the next image.
+                    image_and_metadata = load_and_scale_image(
+                        image_file_path=next_file_path,
+                        screen_width=screen_width,
+                        screen_height=screen_height,
+                    )
+                    if image_and_metadata is None:
+                        raise AssertionError(
+                            f"Failed to load stimulus: {next_file_path}"
+                        )
 
-                # Load the next image.
-                image_and_metadata = load_and_scale_image(
-                    image_file_path=next_file_path,
-                    screen_width=screen_width,
-                    screen_height=screen_height,
-                )
-                if image_and_metadata is None:
-                    raise AssertionError(f"Failed to load stimulus: {next_file_path}")
+                    current_image = image_and_metadata["image"]
 
-                current_image = image_and_metadata["image"]
+                    img_rect = current_image.get_rect(
+                        center=(screen_width // 2, screen_height // 2)
+                    )
+                    screen.fill(background_color)
+                    screen.blit(current_image, img_rect)
 
-                img_rect = current_image.get_rect(
-                    center=(screen_width // 2, screen_height // 2)
-                )
-                screen.fill(background_color)
-                screen.blit(current_image, img_rect)
+                # Show text.
+                else:
+                    # Clear previous stimulus.
+                    screen.fill(background_color)
+
+                    stimulus_text = render_spaced_text(
+                        text=stimulus_class,
+                        font=stimulus_font,
+                        color=stimulus_font_color,
+                        spacing=stimulus_font_spacing,
+                    )
+
+                    stimulus_rect = stimulus_text.get_rect(
+                        center=(screen_width // 2, screen_height // 2)
+                    )
+                    screen.blit(stimulus_text, stimulus_rect)
+
                 pygame.display.flip()
                 # Start of stimulus presentation.
                 t_stim_start = eeg_device.lsl_local_clock()
@@ -578,9 +616,6 @@ def experiment_image(config: dict):
 
                 # Is this a target trial?
                 if idx_trial in target_trial_idcs:
-                    qa_font = pygame.font.SysFont("arial", 42)
-                    feedback_font = pygame.font.SysFont("arial", 60, bold=True)
-
                     response_log = []
 
                     if stimulus_type == "image":
@@ -614,8 +649,8 @@ def experiment_image(config: dict):
                     y_pos = draw_text_wrapped(
                         surface=screen,
                         text=question_text,
-                        font=qa_font,
-                        color=(255, 255, 255),
+                        font=stimulus_font,
+                        color=stimulus_font_color,
                         y_start=y_pos,
                         max_width=screen_width * 0.8,
                         screen_width=screen_width,
@@ -628,8 +663,8 @@ def experiment_image(config: dict):
                         y_pos = draw_text_wrapped(
                             surface=screen,
                             text=ans_text,
-                            font=qa_font,
-                            color=(255, 255, 255),
+                            font=stimulus_font,
+                            color=stimulus_font_color,
                             y_start=y_pos,
                             max_width=screen_width * 0.8,
                             screen_width=screen_width,
@@ -713,7 +748,7 @@ def experiment_image(config: dict):
                         break
 
                     screen.fill(background_color)
-                    feedback_surface = feedback_font.render(
+                    feedback_surface = stimulus_font.render(
                         feedback_text, True, feedback_color
                     )
                     feedback_rect = feedback_surface.get_rect(
@@ -742,8 +777,8 @@ def experiment_image(config: dict):
                             y_pos = draw_text_wrapped(
                                 surface=screen,
                                 text="The correct answer was:",
-                                font=qa_font,
-                                color=(255, 255, 255),
+                                font=stimulus_font,
+                                color=stimulus_font_color,
                                 y_start=y_pos,
                                 max_width=screen_width * 0.8,
                                 screen_width=screen_width,
@@ -752,8 +787,8 @@ def experiment_image(config: dict):
                             y_pos = draw_text_wrapped(
                                 surface=screen,
                                 text=correct_answer_text,
-                                font=qa_font,
-                                color=(255, 255, 255),
+                                font=stimulus_font,
+                                color=stimulus_font_color,
                                 y_start=y_pos,
                                 max_width=screen_width * 0.8,
                                 screen_width=screen_width,
@@ -806,10 +841,13 @@ def experiment_image(config: dict):
                 # *** (6) Inter-block interval
 
                 if ((idx_trial + 1) % n_trials_per_block) == 0:
-                    # End of inter-block interval.
+                    # Until when to stay in the inter-block interval.
                     t_ibi_end = eeg_device.lsl_local_clock() + inter_block_rest_duration
 
                     if use_ibi_audio_cue:
+                        # Audio cue to signal the beginning of the inter-block interval.
+                        pure_tone_start.play()
+
                         # Time when to play audio cue to signal end of inter-block
                         # interval.
                         t_ibi_end_audio_cue = t_ibi_end - pure_tone_end_delay

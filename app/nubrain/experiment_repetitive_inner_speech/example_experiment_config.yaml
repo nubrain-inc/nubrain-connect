@@ -38,7 +38,11 @@ n_blocks: 4
 n_target_events: 5
 response_window_duration: 1.2 # Response window for target events
 
-stimulus_font_sizes: 64
+stimulus_font_name: "nimbussans"
+stimulus_font_is_bold: False
+stimulus_font_is_italic: False
+stimulus_font_size: 64
+stimulus_font_spacing: 1.0
 stimulus_font_color: [0, 0, 0]
 
 background_color: [128, 128, 128]

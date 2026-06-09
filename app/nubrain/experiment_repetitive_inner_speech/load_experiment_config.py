@@ -54,7 +54,11 @@ class EegExperimentConfig:
     n_target_events: int
     response_window_duration: float
 
-    stimulus_font_sizes: int
+    stimulus_font_name: str
+    stimulus_font_is_bold: bool
+    stimulus_font_is_italic: bool
+    stimulus_font_size: int
+    stimulus_font_spacing: float
     stimulus_font_color: list
 
     background_color: list
