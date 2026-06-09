@@ -52,7 +52,6 @@ class EegExperimentConfig:
     n_blocks: int
 
     n_target_events: int
-    response_window_duration: float
 
     stimulus_font_name: str
     stimulus_font_is_bold: bool
