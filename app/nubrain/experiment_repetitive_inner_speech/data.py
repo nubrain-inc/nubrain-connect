@@ -151,6 +151,9 @@ def eeg_data_logging(subprocess_params: dict):
             if isinstance(value, (dict, list, tuple)):
                 # Serialize the complex type into a JSON string.
                 metadata_group.attrs[key] = json.dumps(value)
+            elif value is None:
+                # Skip None values (not supported by hdf5, would result in TypeError).
+                pass
             else:
                 metadata_group.attrs[key] = value
 
