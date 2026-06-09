@@ -2,7 +2,7 @@ import argparse
 import os
 
 from nubrain.experiment_image.load_config import load_config_image_yaml
-from nubrain.experiment_repetitive_inner_speech.data import (
+from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
     load_config_repetitive_inner_speech_yaml,
 )
 from nubrain.experiment_text_comprehension.demo import text_demo_comprehension
