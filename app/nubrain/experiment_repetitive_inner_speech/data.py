@@ -51,6 +51,7 @@ def eeg_data_logging(subprocess_params: dict):
     repeat_duration = subprocess_params["repeat_duration"]
     inter_trial_interval = subprocess_params["inter_trial_interval"]
     inter_trial_jitter = subprocess_params["inter_trial_jitter"]
+    n_trials = subprocess_params["n_trials"]
     n_trials_per_block = subprocess_params["n_trials_per_block"]
     inter_block_rest_duration = subprocess_params["inter_block_rest_duration"]
     n_blocks = subprocess_params["n_blocks"]
@@ -110,6 +111,7 @@ def eeg_data_logging(subprocess_params: dict):
         "repeat_duration": repeat_duration,
         "inter_trial_interval": inter_trial_interval,
         "inter_trial_jitter": inter_trial_jitter,
+        "n_trials": n_trials,
         "n_trials_per_block": n_trials_per_block,
         "inter_block_rest_duration": inter_block_rest_duration,
         "n_blocks": n_blocks,
@@ -221,8 +223,6 @@ def eeg_data_logging(subprocess_params: dict):
             ]
         )
 
-        n_trials = n_blocks * n_trials_per_block
-
         file.create_dataset(
             "stimulus_data",
             (n_trials,),
@@ -321,12 +321,12 @@ def eeg_data_logging(subprocess_params: dict):
                     data_to_write[0]["stimulus_end_time"] = stimulus_end_time
 
                     # Loop over cue onset times (multiple per trial).
-                    silent_speech_cue_onset = new_stimulus_data[
-                        "silent_speech_cue_onset"
+                    silent_speech_cue_onsets = new_stimulus_data[
+                        "silent_speech_cue_onsets"
                     ]  # list of float
                     for i in range(n_repetitions_per_trial):
                         # Cue onset of current trial.
-                        _cue_onset = silent_speech_cue_onset[i]
+                        _cue_onset = silent_speech_cue_onsets[i]
                         data_to_write[0][f"silent_speech_cue_onset_{i}"] = _cue_onset
 
                     is_target = new_stimulus_data["is_target"]

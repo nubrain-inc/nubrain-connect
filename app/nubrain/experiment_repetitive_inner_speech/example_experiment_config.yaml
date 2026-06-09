@@ -25,7 +25,7 @@ cue_duration: 0.1 # Duration of audio cue
 # repetitive inner speech. Note that pygame audio playback is non-blocking, and
 # therefore the duration of the cue (`audio_cue_duration`) is not added to the duration
 # of the trial.
-repeat_duration: 1.0
+repeat_duration: 1.5
 # After prompting the participant to repeat the word `n_repetitions_per_trial` times,
 # wait for x seconds before showing the next word / image.
 inter_trial_interval: 0.5
