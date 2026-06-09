@@ -267,6 +267,7 @@ def experiment_repetitive_inner_speech(config: dict):
         "repeat_duration": repeat_duration,
         "inter_trial_interval": inter_trial_interval,
         "inter_trial_jitter": inter_trial_jitter,
+        "n_trials": n_trials,
         "n_trials_per_block": n_trials_per_block,
         "inter_block_rest_duration": inter_block_rest_duration,
         "n_blocks": n_blocks,
@@ -881,6 +882,11 @@ def experiment_repetitive_inner_speech(config: dict):
                 if ((idx_trial + 1) % n_trials_per_block) == 0:
                     # Until when to stay in the inter-block interval.
                     t_ibi_end = eeg_device.lsl_local_clock() + inter_block_rest_duration
+
+                    # Do not play tone if this is the end of the run.
+                    if (idx_trial + 1) == n_trials:
+                        print("Inter-block interval, end of run, disable IBI audio cue")
+                        use_ibi_audio_cue = False
 
                     if use_ibi_audio_cue:
                         # Audio cue to signal the beginning of the inter-block interval.
