@@ -228,6 +228,22 @@ def eeg_data_logging(subprocess_params: dict):
             dtype=stimulus_dtype,
         )
 
+        # ------------------------------------------------------------------------------
+        # *** Initialize hdf5 dataset for behavioural data
+
+        behavioural_dtype = np.dtype(
+            [
+                ("n_target_events_correct", np.int64),
+                ("n_target_events_incorrect", np.int64),
+            ]
+        )
+
+        file.create_dataset(
+            "behavioural_data",
+            (1,),
+            dtype=behavioural_dtype,
+        )
+
     # ----------------------------------------------------------------------------------
     # *** Experiment loop
 
@@ -357,6 +373,25 @@ def eeg_data_logging(subprocess_params: dict):
                     hdf5_stimulus_data[stimulus_counter] = data_to_write
 
                     stimulus_counter += 1
+
+            # --------------------------------------------------------------------------
+            # *** Write behavioural data to hdf5 file
+
+            elif data_type == "behavioural":
+                new_behavioural_data = new_data.get("behavioural_data")
+
+                if new_behavioural_data is not None:
+                    hdf5_behavioural_data = file["behavioural_data"]
+
+                    n_correct = new_behavioural_data["n_target_events_correct"]
+                    n_incorrect = new_behavioural_data["n_target_events_incorrect"]
+
+                    data_to_write = np.empty((1,), dtype=behavioural_dtype)
+                    data_to_write[0]["n_target_events_correct"] = n_correct
+                    data_to_write[0]["n_target_events_incorrect"] = n_incorrect
+
+                    # Write the structured array to the dataset.
+                    hdf5_behavioural_data[0] = data_to_write
 
     # ----------------------------------------------------------------------------------
     # *** Upload to cloud storage

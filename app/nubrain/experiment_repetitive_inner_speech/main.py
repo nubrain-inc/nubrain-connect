@@ -301,6 +301,10 @@ def experiment_image(config: dict):
     # ----------------------------------------------------------------------------------
     # *** Start experiment
 
+    # Count correct and incorrect answers for attention task.
+    n_target_events_correct = 0
+    n_target_events_incorrect = 0
+
     running = True
     while running:
         pygame.init()
@@ -731,9 +735,11 @@ def experiment_image(config: dict):
                                         )
 
                                         if is_correct:
+                                            n_target_events_correct += 1
                                             feedback_text = "Correct"
                                             feedback_color = (0, 255, 0)  # Green
                                         else:
+                                            n_target_events_incorrect += 1
                                             feedback_text = "Incorrect"
                                             feedback_color = (255, 0, 0)  # Red
 
@@ -908,6 +914,18 @@ def experiment_image(config: dict):
                                 "eeg_timestamps": eeg_ts,
                             }
                         )
+
+            # --------------------------------------------------------------------------
+            # *** End of run
+
+            # Log behavioural results.
+            behavioural_data = {
+                "n_target_events_correct": n_target_events_correct,
+                "n_target_events_incorrect": n_target_events_incorrect,
+            }
+            data_logging_queue.put(
+                {"type": "behavioural", "behavioural_data": behavioural_data}
+            )
 
             running = False
 
