@@ -16,24 +16,24 @@ from nubrain.experiment_image.randomize_conditions import (
     shuffle_dicts_with_repetitions,
 )
 from nubrain.experiment_repetitive_inner_speech.data import eeg_data_logging
-from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
-    load_config_repetitive_inner_speech_yaml,
-)
 from nubrain.experiment_text_comprehension.wrap_text import draw_text_wrapped
 from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
 from nubrain.misc.datetime import get_formatted_current_datetime
 from nubrain.text.rendering import render_spaced_text
 
-# mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
+mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
 
-yaml_file_path = "/home/john/github/nubrain-connect/app/nubrain/experiment_repetitive_inner_speech/example_experiment_config.yaml"
-config = load_config_repetitive_inner_speech_yaml(yaml_file_path=yaml_file_path)
-config["subject_id"] = "sub-999"
-config["session_id"] = "1"
+# from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
+#     load_config_repetitive_inner_speech_yaml,
+# )
+# yaml_file_path = "/home/john/github/nubrain-connect/app/nubrain/experiment_repetitive_inner_speech/example_experiment_config.yaml"
+# config = load_config_repetitive_inner_speech_yaml(yaml_file_path=yaml_file_path)
+# config["subject_id"] = "sub-999"
+# config["session_id"] = "1"
 
 
-def experiment_image(config: dict):
+def experiment_repetitive_inner_speech(config: dict):
     # ----------------------------------------------------------------------------------
     # *** Get config
 
@@ -63,7 +63,6 @@ def experiment_image(config: dict):
     inter_block_rest_duration = config["inter_block_rest_duration"]
     n_blocks = config["n_blocks"]
     n_target_events = config["n_target_events"]
-    response_window_duration = config["response_window_duration"]
 
     stimulus_font_name = config["stimulus_font_name"]
     stimulus_font_is_bold = config["stimulus_font_is_bold"]
@@ -272,7 +271,6 @@ def experiment_image(config: dict):
         "inter_block_rest_duration": inter_block_rest_duration,
         "n_blocks": n_blocks,
         "n_target_events": n_target_events,
-        "response_window_duration": response_window_duration,
         # Storage
         "path_out_data": path_out_data,
         "path_stimuli": path_stimuli,

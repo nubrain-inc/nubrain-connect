@@ -4,15 +4,15 @@ lsl_stream_name: "WS-default" # LSL stream name from DSI-Streamer
 
 utility_frequency: 50.0 # Hz
 
-output_directory: "/home/john/Downloads/dummy/output" # "C:/Users/nubra/Documents/recordings_repetitive_inner_speech_v1"
-path_stimuli: "/home/john/Downloads/dummy/stimuli" # "C:/Users/nubra/Documents/repetitive_inner_speech/"
+output_directory: "C:/Users/nubra/Documents/recordings_repetitive_inner_speech_v1"
+path_stimuli: "C:/Users/nubra/Documents/repetitive_inner_speech/"
 
 # Storage bucket where to upload hdf5 file at the end of each run
 storage_bucket_name: "nubrain-eeg"
 # Name of the storage object ("blob") to create
 storage_blob_name: "eeg/raw/repetitive_inner_speech/{device_type}/{filename}"
 # File with credentials for uploading to storage bucket
-storage_bucket_credentials: "/example/path" # "C:/Users/nubra/Documents/gcloud/secret-gcs-upload-eeg.json"
+storage_bucket_credentials: "C:/Users/nubra/Documents/gcloud/secret-gcs-upload-eeg.json"
 
 # Timing parameters (all in seconds)
 
@@ -35,8 +35,7 @@ n_trials_per_block: 25
 inter_block_rest_duration: 5.0
 n_blocks: 4
 
-n_target_events: 5
-response_window_duration: 1.2 # Response window for target events
+n_target_events: 10
 
 stimulus_font_name: "nimbussans"
 stimulus_font_is_bold: False

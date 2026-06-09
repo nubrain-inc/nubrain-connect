@@ -55,7 +55,6 @@ def eeg_data_logging(subprocess_params: dict):
     inter_block_rest_duration = subprocess_params["inter_block_rest_duration"]
     n_blocks = subprocess_params["n_blocks"]
     n_target_events = subprocess_params["n_target_events"]
-    response_window_duration = subprocess_params["response_window_duration"]
     # Storage
     path_out_data = subprocess_params["path_out_data"]
     path_stimuli = subprocess_params["path_stimuli"]
@@ -115,7 +114,6 @@ def eeg_data_logging(subprocess_params: dict):
         "inter_block_rest_duration": inter_block_rest_duration,
         "n_blocks": n_blocks,
         "n_target_events": n_target_events,
-        "response_window_duration": response_window_duration,
         # Storage
         "path_out_data": path_out_data,
         "path_stimuli": path_stimuli,
