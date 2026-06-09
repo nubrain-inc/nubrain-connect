@@ -138,10 +138,10 @@ def experiment_image(config: dict):
         )
         n_trials = n_stimulus_categories * 2
 
-    stimulus_data = []
+    stimuli = []
     for stimulus_class in object_classes:
         for stimulus_type in ["text", "image"]:
-            stimulus_data.append(
+            stimuli.append(
                 {
                     "stimulus_class": stimulus_class,
                     "stimulus_type": stimulus_type,
@@ -150,7 +150,7 @@ def experiment_image(config: dict):
 
     # Order of image categories.
     trial_order = create_balanced_list(
-        image_categories=stimulus_data,
+        image_categories=stimuli,
         target_length=n_trials,
     )
 
@@ -171,9 +171,6 @@ def experiment_image(config: dict):
             category_to_filepath[image_category].append(image_filepath)
         else:
             category_to_filepath[image_category] = [image_filepath]
-
-    previous_image_file_path = None
-    previous_image_category = None
 
     # ----------------------------------------------------------------------------------
     # *** Create target events
@@ -415,21 +412,21 @@ def experiment_image(config: dict):
                 # Show image.
                 if stimulus_type == "image":
                     # Sample the next image.
-                    next_file_path = sample_next_image(
+                    image_file_path = sample_next_image(
                         next_image_category=stimulus_class,
                         category_to_filepath=category_to_filepath,
-                        previous_image_file_path=previous_image_file_path,
+                        previous_image_file_path=None,
                     )
 
                     # Load the next image.
                     image_and_metadata = load_and_scale_image(
-                        image_file_path=next_file_path,
+                        image_file_path=image_file_path,
                         screen_width=screen_width,
                         screen_height=screen_height,
                     )
                     if image_and_metadata is None:
                         raise AssertionError(
-                            f"Failed to load stimulus: {next_file_path}"
+                            f"Failed to load stimulus: {image_file_path}"
                         )
 
                     current_image = image_and_metadata["image"]
@@ -442,6 +439,8 @@ def experiment_image(config: dict):
 
                 # Show text.
                 else:
+                    image_file_path = None
+
                     # Clear previous stimulus.
                     screen.fill(background_color)
 
@@ -488,12 +487,6 @@ def experiment_image(config: dict):
                         }
                     )
 
-                stimulus_data = {
-                    "stimulus_start_time": t_stim_start,
-                    "stimulus_class": stimulus_class,  # E.g. "apple"
-                    "stimulus_type": stimulus_type,  # "text" or "image"
-                }
-
                 # Wait for image duration, but check for responses continuously.
                 t_stim_end_expected = t_stim_start + stimulus_duration
                 while eeg_device.lsl_local_clock() < t_stim_end_expected:
@@ -515,11 +508,6 @@ def experiment_image(config: dict):
                 screen.fill(background_color)
                 pygame.display.flip()
                 t_stim_end_actual = eeg_device.lsl_local_clock()
-
-                stimulus_data["stimulus_end_time"] = t_stim_end_actual
-                stimulus_data["stimulus_duration_s"] = (
-                    t_stim_end_actual - stimulus_data["stimulus_start_time"]
-                )
 
                 if device_type in ["cyton", "synthetic"]:
                     eeg_device.insert_marker(global_config.stim_end_marker)
@@ -562,7 +550,7 @@ def experiment_image(config: dict):
                 # ----------------------------------------------------------------------
                 # *** (3) Silent speech
 
-                stimulus_data["silent_speech_cue_onsets"] = []
+                silent_speech_cue_onsets = []
 
                 for idx_repetition in range(n_repetitions_per_trial):
                     # Play the tone that cues the beginning of an inner speech
@@ -573,7 +561,7 @@ def experiment_image(config: dict):
                     # the audio cue (and not the end).
                     t_cue_start = eeg_device.lsl_local_clock()
 
-                    stimulus_data["silent_speech_cue_onsets"].append(t_cue_start)
+                    silent_speech_cue_onsets.append(t_cue_start)
 
                     if device_type in ["cyton", "synthetic"]:
                         eeg_device.insert_marker(global_config.cue_start_marker)
@@ -616,6 +604,7 @@ def experiment_image(config: dict):
 
                 # Is this a target trial?
                 if idx_trial in target_trial_idcs:
+                    is_target = True
                     response_log = []
 
                     if stimulus_type == "image":
@@ -796,8 +785,11 @@ def experiment_image(config: dict):
                             pygame.display.flip()
                             pygame.time.delay(1000)
 
-                    # TODO Log stimulus data
-                    raise NotImplementedError
+                    attention_task_log = {
+                        "question": question_text,
+                        "answers": answers,
+                        "response_log": response_log,
+                    }
 
                     # Log EEG data (to avoid buffer overflow).
                     eeg_data, eeg_ts = eeg_device.get_board_data()
@@ -809,6 +801,30 @@ def experiment_image(config: dict):
                                 "eeg_timestamps": eeg_ts,
                             }
                         )
+
+                else:
+                    # Not a target trial.
+                    is_target = False
+                    attention_task_log = None
+
+                # ----------------------------------------------------------------------
+                # *** Log stimulus data
+
+                stimulus_data = {
+                    "idx_trial": idx_trial,
+                    "stimulus_class": stimulus_class,  # E.g. "apple"
+                    "stimulus_type": stimulus_type,  # "text" or "image"
+                    "image_file_path": image_file_path,  # None if text trial
+                    "stimulus_start_time": t_stim_start,
+                    "stimulus_end_time": t_stim_end_actual,
+                    "silent_speech_cue_onsets": silent_speech_cue_onsets,
+                    "is_target": is_target,
+                    "attention_task_log": attention_task_log,
+                }
+
+                data_logging_queue.put(
+                    {"type": "stimulus", "stimulus_data": stimulus_data}
+                )
 
                 # ----------------------------------------------------------------------
                 # *** (5) Inter-trial interval
@@ -836,6 +852,17 @@ def experiment_image(config: dict):
                         break
                 if not running:
                     break
+
+                # Log EEG data (to avoid buffer overflow).
+                eeg_data, eeg_ts = eeg_device.get_board_data()
+                if eeg_data.size > 0:
+                    data_logging_queue.put(
+                        {
+                            "type": "eeg",
+                            "eeg_data": eeg_data,
+                            "eeg_timestamps": eeg_ts,
+                        }
+                    )
 
                 # ----------------------------------------------------------------------
                 # *** (6) Inter-block interval
