@@ -1,0 +1,3 @@
+# Repetitive inner speech data collection
+
+Repetitive inner speech paradigm. Participants are presented with single words or images as cues for repetitive inner speech. The vocabulary should be small, e.g. 5 objects (where the same object is represented both as a word and as an image, e.g. "horse" and a picture of a horse). Use a balanced design (i.e. same number of trials per word / image), so that a simple classifier can be trained on the data. In each trial, participants are presented with either a word (e.g. "horse") or an image (e.g. a picture of a horse), followed by a delay (e.g. 1200 ms of blank screen), followed by a cue (a tone) after which they are instructed to engage in silent speech (thinking the word without vocalizing).

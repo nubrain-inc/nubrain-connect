@@ -1,18 +1,21 @@
 import random
 from collections import Counter
-from typing import List
 
 
 def shuffle_with_repetitions(
-    list_with_duplicates: List,
+    *,
+    list_with_duplicates: list,
     repetitions: int = 0,
     minimize_runs: bool = True,
-) -> List:
+) -> list:
     """
     Shuffle a list to have exactly 'repetitions' number of consecutive duplicates.
 
-    A repetition is counted as each time an element is immediately followed by the same
-    element. For example, [1, 1, 2, 2, 2] has 3 repetitions.
+    A repetition is counted as such each time an element is immediately followed by the
+    same element. For example, [1, 1, 2, 2, 2] has 3 repetitions.
+
+    Notes: Only accepts a list of (hashable) strings. If conditions are defined by
+    dictionaries, use below wrapper function (`shuffle_dicts_with_repetitions()`).
 
     Args:
         list_with_duplicates: Input list containing duplicates
@@ -240,7 +243,35 @@ def shuffle_with_repetitions(
     )
 
 
-def count_runs(lst: List, min_length: int = 3) -> int:
+def shuffle_dicts_with_repetitions(
+    *,
+    list_with_duplicates: list[dict],
+    repetitions: int = 0,
+    minimize_runs: bool = True,
+) -> list[dict]:
+    """
+    A wrapper to shuffle lists of unhashable dictionaries with exact repetitions.
+    """
+    unique_dicts = []
+    id_list = []
+
+    # Map each dictionary to a unique integer ID.
+    for d in list_with_duplicates:
+        if d not in unique_dicts:
+            unique_dicts.append(d)
+        id_list.append(unique_dicts.index(d))
+
+    shuffled_ids = shuffle_with_repetitions(
+        list_with_duplicates=id_list,
+        repetitions=repetitions,
+        minimize_runs=minimize_runs,
+    )
+
+    # Map the integer IDs back to the original dictionaries.
+    return [unique_dicts[i] for i in shuffled_ids]
+
+
+def count_runs(lst: list, min_length: int = 3) -> int:
     """Count the number of runs of min_length or more consecutive identical items."""
     if not lst:
         return 0
@@ -259,27 +290,27 @@ def count_runs(lst: List, min_length: int = 3) -> int:
 
 def create_balanced_list(*, image_categories: list, target_length: int):
     """
-    Creates a list with approximately equal instances of each string.
+    Creates a list with approximately equal instances of each item.
 
     Args:
-        strings: List of strings to distribute
+        image_categories: List of items to distribute
         target_length: Desired length of the output list
 
     Returns:
-        List with approximately equal distribution of input strings
+        List with approximately equal distribution of input items
     """
     if not image_categories or target_length <= 0:
         return []
 
     n = len(image_categories)
-    base_count = target_length // n  # Minimum count for each string
+    base_count = target_length // n  # Minimum count for each item
     remainder = target_length % n  # Extra items to distribute
 
     result = []
-    for idx, string in enumerate(image_categories):
-        # First 'remainder' strings get one extra copy.
+    for idx, item in enumerate(image_categories):
+        # First 'remainder' items get one extra copy.
         count = base_count + (1 if idx < remainder else 0)
-        result.extend([string] * count)
+        result.extend([item] * count)
 
     return result
 
@@ -297,3 +328,57 @@ def sample_next_image(
         else:
             break
     return next_image_file_path
+
+
+def sample_with_min_distance(
+    *,
+    n_samples: int,
+    lower: int,
+    upper: int,
+    min_distance: int = 1,
+):
+    """
+    Sample `n_samples` unique integers from [lower, upper] such that every pair of
+    sampled values (when sorted) is at least `min_distance` apart.
+
+    Uses reduction; sample from a compressed range without constraints, then expand the
+    values to enforce the minimum gap.
+
+    Parameters
+    ----------
+    n_samples : int
+        Number of integers to sample.
+    lower : int
+        Lower bound of the interval (inclusive).
+    upper : int
+        Upper bound of the interval (inclusive).
+    min_distance : int
+        Minimum distance between any two consecutive samples (sorted order).
+
+    Returns
+    -------
+    list[int]
+        A list of `n_samples` sampled integers satisfying the distance constraint,
+        returned in sorted order.
+    """
+    if n_samples <= 0:
+        return []
+
+    range_size = upper - lower + 1
+    required_size = n_samples + (n_samples - 1) * (min_distance - 1)
+
+    if required_size > range_size:
+        raise ValueError(
+            f"Cannot sample {n_samples} values from [{lower}, {upper}] with "
+            f"min_distance={min_distance} (need at least {required_size} "
+            f"integers in the range, but only {range_size} available)."
+        )
+
+    # Sample from a compressed range where no gap constraint is needed.
+    reduced_upper = upper - (n_samples - 1) * (min_distance - 1)
+    samples = sorted(random.sample(range(lower, reduced_upper + 1), n_samples))
+
+    # Expand: shift each successive value to restore the minimum gap.
+    result = [val + i * (min_distance - 1) for i, val in enumerate(samples)]
+
+    return result

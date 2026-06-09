@@ -2,6 +2,9 @@ import argparse
 import os
 
 from nubrain.experiment_image.load_config import load_config_image_yaml
+from nubrain.experiment_repetitive_inner_speech.data import (
+    load_config_repetitive_inner_speech_yaml,
+)
 from nubrain.experiment_text_comprehension.demo import text_demo_comprehension
 from nubrain.experiment_text_comprehension.load_experiment_config import (
     load_config_text_comprehension_yaml,
@@ -29,16 +32,20 @@ try:
         experiment_eeg_to_image_v1_autoregressive,
     )
     from nubrain.experiment_image.main import experiment_image
+    from nubrain.experiment_repetitive_inner_speech.main import (
+        experiment_repetitive_inner_speech,
+    )
     from nubrain.experiment_text_comprehension.main import experiment_text_comprehension
     from nubrain.experiment_text_targets.main import experiment_text_targets
 except Exception as e:
-    experiment_image = None
-    experiment_text_targets = None
     load_config_yaml_eeg_to_image_v1 = None
     experiment_eeg_to_image_v1 = None
     experiment_eeg_to_image_v1_autoregressive = None
+    experiment_image = None
+    experiment_repetitive_inner_speech = None
+    experiment_text_comprehension = None
+    experiment_text_targets = None
     print(f"Failed to import nubrain main module: {e}")
-
 from nubrain.live_demo.main import run_live_demo
 
 
@@ -62,13 +69,14 @@ def main():
     #    repetitions as target events for attention task.
     # - "data_collection_text_targets":  Data collection mode for text stimuli with
     #   word repetitions as target events for attention task.
-
-    # TODO
     # - "demo_text_comprehension":  Demo mode (without EEG device) with text stimuli.
     #   Comprehension questions at the end of the run.
     # - "data_collection_text_comprehension":  Data collection mode for text stimuli
     #   with comprehension questions at the end of the run.
-
+    # - "demo_repetitive_inner_speech": Data collection mode for repetitive
+    #   inner speech paradigm (with text and image stimuli).
+    # - "data_collection_repetitive_inner_speech": Data collection mode for repetitive
+    #   inner speech paradigm (with text and image stimuli).
     # - "eeg_to_image":  After presenting each image, directly reconstruct the image,
     #   then show the next image.
     # - "eeg_to_image_autoregressive": After presenting an image, directly reconstruct
@@ -98,8 +106,16 @@ def main():
         # Data collection mode, text stimuli, repeat words target events.
         config = load_config_text_targets_yaml(yaml_file_path=input_file_path)
     elif mode in ["demo_text_comprehension", "data_collection_text_comprehension"]:
-        # Data collection mode, text stimuli, comprehension questions.
+        # Text stimuli, comprehension questions.
         config = load_config_text_comprehension_yaml(yaml_file_path=input_file_path)
+    elif mode in [
+        "data_collection_repetitive_inner_speech",
+        "demo_repetitive_inner_speech",
+    ]:
+        # Repetitive inner speech.
+        config = load_config_repetitive_inner_speech_yaml(
+            yaml_file_path=input_file_path
+        )
     elif mode in ["eeg_to_image", "eeg_to_image_autoregressive"]:
         # Live EEG to image generation mode. Use corresponding config file loading
         # function (different parameters than regular data collection).
@@ -158,6 +174,34 @@ def main():
             experiment_text_comprehension(config=config)
         elif mode == "demo_text_comprehension":
             text_demo_comprehension(config=config)
+        else:
+            raise AssertionError
+    elif mode in [
+        "data_collection_repetitive_inner_speech",
+        "demo_repetitive_inner_speech",
+    ]:
+        # Show GUI for user to update session parameters (subject ID, next run).
+        session_config_path = os.path.join(
+            os.path.dirname(__file__),
+            "experiment_repetitive_inner_speech",
+            "session_config.yaml",
+        )
+        gui = SessionConfigEditor(session_config_path=session_config_path)
+        session_config = gui.run()
+        if session_config is None:
+            # User pressed the cancel button.
+            print("Cancelled.")
+            return None
+        # Map values (subject, session, run) from session config to experiment config.
+        config = map_session_config_comprehension_condition(
+            session_config=session_config,
+            experiment_config=config,
+        )
+        if mode == "data_collection_repetitive_inner_speech":
+            experiment_repetitive_inner_speech(config=config)
+        elif mode == "demo_repetitive_inner_speech":
+            # demo_repetitive_inner_speech(config=config)
+            raise NotImplementedError
         else:
             raise AssertionError
     elif mode == "eeg_to_image":

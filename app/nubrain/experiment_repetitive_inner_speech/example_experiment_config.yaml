@@ -1,0 +1,54 @@
+# Device configuration
+device_type: "dsi24" # Options: "cyton", "dsi24", "synthetic"
+lsl_stream_name: "WS-default" # LSL stream name from DSI-Streamer
+
+utility_frequency: 50.0 # Hz
+
+output_directory: "C:/Users/nubra/Documents/recordings_repetitive_inner_speech_v1"
+path_stimuli: "C:/Users/nubra/Documents/repetitive_inner_speech/"
+
+# Storage bucket where to upload hdf5 file at the end of each run
+storage_bucket_name: "nubrain-eeg"
+# Name of the storage object ("blob") to create
+storage_blob_name: "eeg/raw/repetitive_inner_speech/{device_type}/{filename}"
+# File with credentials for uploading to storage bucket
+storage_bucket_credentials: "C:/Users/nubra/Documents/gcloud/secret-gcs-upload-eeg.json"
+
+# Timing parameters (all in seconds)
+
+stimulus_duration: 0.5 # How long to show each word / image
+post_stim_interval: 1.2 # Interval between word / image and cue for inner speech
+# How often participants are prompted to repeat each word per trial.
+n_repetitions_per_trial: 3
+cue_duration: 0.1 # Duration of audio cue
+# Duration of the interval during which participants are instructed to engage in
+# repetitive inner speech. Note that pygame audio playback is non-blocking, and
+# therefore the duration of the cue (`audio_cue_duration`) is not added to the duration
+# of the trial.
+repeat_duration: 1.0
+# After prompting the participant to repeat the word `n_repetitions_per_trial` times,
+# wait for x seconds before showing the next word / image.
+inter_trial_interval: 0.5
+inter_trial_jitter: 0.0 # Random jitter up to x seconds added to inter trial interval
+
+n_trials_per_block: 25
+inter_block_rest_duration: 5.0
+n_blocks: 4
+
+n_target_events: 10
+
+stimulus_font_name: "nimbussans"
+stimulus_font_is_bold: False
+stimulus_font_is_italic: False
+stimulus_font_size: 64
+stimulus_font_spacing: 1.0
+stimulus_font_color: [0, 0, 0]
+
+background_color: [128, 128, 128]
+
+audio_cue_frequency: 900
+audio_cue_duration: 0.1
+audio_cue_amplitude: 0.9
+
+# Not needed for DSI-24, leave as null or omit
+# eeg_device_address:
