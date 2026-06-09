@@ -247,8 +247,14 @@ def experiment_image(config: dict):
         "device_type": device_type,
         "lsl_stream_name": lsl_stream_name,
         "utility_frequency": utility_frequency,
+        "eeg_board_description": eeg_board_description,
+        "eeg_sampling_rate": eeg_sampling_rate,
+        "n_channels_total": n_channels_total,
         "eeg_channel_mapping": eeg_channel_mapping,
+        # Parameters not used by DSI-24, for compatibility with Cyton board
         "eeg_device_address": eeg_device_address,
+        "eeg_channels": eeg_channels,
+        "marker_channel": marker_channel,
         # Session parameters
         "subject_id": subject_id,
         "session_id": session_id,
@@ -268,7 +274,7 @@ def experiment_image(config: dict):
         "n_target_events": n_target_events,
         "response_window_duration": response_window_duration,
         # Storage
-        "output_directory": output_directory,
+        "path_out_data": path_out_data,
         "path_stimuli": path_stimuli,
         "storage_bucket_name": storage_bucket_name,
         "storage_blob_name": storage_blob_name,
@@ -284,6 +290,8 @@ def experiment_image(config: dict):
         "audio_cue_frequency": audio_cue_frequency,
         "audio_cue_duration": audio_cue_duration,
         "audio_cue_amplitude": audio_cue_amplitude,
+        # Queue
+        "data_logging_queue": data_logging_queue,
     }
 
     logging_process = mp.Process(target=eeg_data_logging, args=(subprocess_params,))
@@ -716,7 +724,6 @@ def experiment_image(config: dict):
                                         # time.
                                         response_log.append(
                                             {
-                                                "answers": answers,
                                                 "selected_answer_idx": selected_idx,
                                                 "is_correct": is_correct,
                                                 "response_time": response_time,
