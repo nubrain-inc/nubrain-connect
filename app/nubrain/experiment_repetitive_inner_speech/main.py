@@ -1,6 +1,5 @@
 import multiprocessing as mp
 import os
-import random
 import traceback
 from time import sleep
 
@@ -9,28 +8,21 @@ import pygame
 
 from nubrain.audio.tone import generate_tone
 from nubrain.device.device_interface import create_eeg_device
+from nubrain.experiment_common.io import ExperimentIO
 from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
     sample_next_image,
     sample_with_min_distance,
     shuffle_dicts_with_repetitions,
 )
+from nubrain.experiment_repetitive_inner_speech.attention_task import run_attention_task
 from nubrain.experiment_repetitive_inner_speech.data import eeg_data_logging
-from nubrain.experiment_text_comprehension.wrap_text import draw_text_wrapped
 from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
 from nubrain.misc.datetime import get_formatted_current_datetime
 from nubrain.text.rendering import render_spaced_text
 
 mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
-
-# from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
-#     load_config_repetitive_inner_speech_yaml,
-# )
-# yaml_file_path = "/home/john/github/nubrain-connect/app/nubrain/experiment_repetitive_inner_speech/example_experiment_config.yaml"
-# config = load_config_repetitive_inner_speech_yaml(yaml_file_path=yaml_file_path)
-# config["subject_id"] = "sub-999"
-# config["session_id"] = "1"
 
 
 def experiment_repetitive_inner_speech(config: dict):
@@ -298,6 +290,18 @@ def experiment_repetitive_inner_speech(config: dict):
     logging_process.start()
 
     # ----------------------------------------------------------------------------------
+    # *** Set up shared I/O helper
+
+    # Bundles eeg_device + device_type + data_logging_queue so the trial loop
+    # below can use io.now(), io.wait_until(), io.emit_marker(), io.drain_eeg()
+    # without repeating the plumbing (or the device-specific marker branch).
+    io = ExperimentIO(
+        eeg_device=eeg_device,
+        device_type=device_type,
+        data_logging_queue=data_logging_queue,
+    )
+
+    # ----------------------------------------------------------------------------------
     # *** Start experiment
 
     # Count correct and incorrect answers for attention task.
@@ -305,648 +309,379 @@ def experiment_repetitive_inner_speech(config: dict):
     n_target_events_incorrect = 0
 
     running = True
-    while running:
-        pygame.init()
 
-        # ------------------------------------------------------------------------------
-        # *** Prepare audio cue for repetitive inner speech
+    pygame.init()
 
-        # Use an audio cue for the start of the repetitive inner speech period.
-        pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=512)
+    # ----------------------------------------------------------------------------------
+    # *** Prepare audio cue for repetitive inner speech
 
-        # Get the sample rate from the mixer settings.
-        sample_rate = pygame.mixer.get_init()[0]
+    # Audio mixer buffer size in frames. Smaller -> lower output latency, but too small
+    # risks buffer underruns (audible clicks/dropouts). 256 frames @ 44.1 kHz ~= 5.8 ms
+    # (was 512 ~= 11.6 ms). If you hear any glitching, raise this (e.g. to 512).
+    audio_mixer_buffer = 256
+    pygame.mixer.init(frequency=44100, size=-16, channels=2, buffer=audio_mixer_buffer)
 
-        audio_cue_tone_data = generate_tone(
-            frequency=audio_cue_frequency,  # Pitch of the tone in Hz
-            duration=audio_cue_duration,  # Duration of audio cue
-            amplitude=audio_cue_amplitude,  # Volume, from 0.0 to 1.0
+    # Get the sample rate from the mixer settings.
+    sample_rate = pygame.mixer.get_init()[0]
+
+    # Warm up the audio path so the very first real cue does not pay a one-off
+    # channel-allocation / device-wake cost that would inflate trial-1 latency.
+    pygame.mixer.set_num_channels(8)
+    try:
+        _warmup_sound = pygame.sndarray.make_sound(
+            np.zeros((int(sample_rate * 0.05), 2), dtype=np.int16)
+        )
+        _warmup_sound.set_volume(0.0)
+        _warmup_sound.play()
+    except Exception:
+        pass  # Warm-up is best-effort; never let it abort the experiment.
+
+    audio_cue_tone_data = generate_tone(
+        frequency=audio_cue_frequency,  # Pitch of the tone in Hz
+        duration=audio_cue_duration,  # Duration of audio cue
+        amplitude=audio_cue_amplitude,  # Volume, from 0.0 to 1.0
+        sample_rate=sample_rate,
+    )
+
+    # Create a sound object from the numpy array.
+    audio_cue_tone = pygame.sndarray.make_sound(audio_cue_tone_data)
+
+    # ----------------------------------------------------------------------------------
+    # *** Prepare audio cues for inter block interval
+
+    # Use an audio cue at the beginning and at the end of the inter-block interval, so
+    # the participant can close their eyes / rest.
+
+    # How long before the end of the inter-block interval to play the audio cue.
+    pure_tone_end_delay = 1.0
+
+    # Play the tone to cue the end of the inter-block interval x seconds before the end
+    # of the inter-block interval. Do not use the audio cue if the inter-block interval
+    # is too short.
+    if inter_block_rest_duration <= (pure_tone_end_delay + 0.1):
+        print(
+            "WARNING: Will not use audio cue for the end of the inter-block "
+            "interval because of short inter-block interval of "
+            f"{inter_block_rest_duration} s"
+        )
+        use_ibi_audio_cue = False
+    else:
+        use_ibi_audio_cue = True
+
+    if use_ibi_audio_cue:
+        # Generate the tone data.
+        tone_data_start = generate_tone(
+            frequency=700,  # Pitch of the tone in Hz
+            duration=0.3,  # Duration of audio cue
+            amplitude=0.9,  # Volume, from 0.0 to 1.0
+            sample_rate=sample_rate,
+        )
+
+        tone_data_end = generate_tone(
+            frequency=1400,  # Pitch of the tone in Hz
+            duration=0.3,  # Duration of audio cue
+            amplitude=0.9,  # Volume, from 0.0 to 1.0
             sample_rate=sample_rate,
         )
 
         # Create a sound object from the numpy array.
-        audio_cue_tone = pygame.sndarray.make_sound(audio_cue_tone_data)
-
-        # ------------------------------------------------------------------------------
-        # *** Prepare audio cues for inter block interval
-
-        # Use an audio cue at the beginning and at the end of the inter-block interval,
-        # so the participant can close their eyes / rest.
-
-        # How long before the end of the inter-block interval to play the audio cue.
-        pure_tone_end_delay = 1.0
-
-        # Play the tone to cue the end of the inter-block interval x seconds before the
-        # end of the inter-block interval. Do not use the audio cue if the inter-block
-        # interval is too short.
-        if inter_block_rest_duration <= (pure_tone_end_delay + 0.1):
-            print(
-                "WARNING: Will not use audio cue for the end of the inter-block "
-                "interval because of short inter-block interval of "
-                f"{inter_block_rest_duration} s"
-            )
-            use_ibi_audio_cue = False
-        else:
-            use_ibi_audio_cue = True
-
-        if use_ibi_audio_cue:
-            # Generate the tone data.
-            tone_data_start = generate_tone(
-                frequency=700,  # Pitch of the tone in Hz
-                duration=0.3,  # Duration of audio cue
-                amplitude=0.9,  # Volume, from 0.0 to 1.0
-                sample_rate=sample_rate,
-            )
-
-            tone_data_end = generate_tone(
-                frequency=1400,  # Pitch of the tone in Hz
-                duration=0.3,  # Duration of audio cue
-                amplitude=0.9,  # Volume, from 0.0 to 1.0
-                sample_rate=sample_rate,
-            )
-
-            # Create a sound object from the numpy array.
-            pure_tone_start = pygame.sndarray.make_sound(tone_data_start)
-            pure_tone_end = pygame.sndarray.make_sound(tone_data_end)
-
-        # ------------------------------------------------------------------------------
-        # *** Prepare font
-
-        stimulus_font = pygame.font.SysFont(
-            stimulus_font_name,
-            stimulus_font_size,
-            bold=stimulus_font_is_bold,
-            italic=stimulus_font_is_italic,
-        )
-
-        # ------------------------------------------------------------------------------
-        # *** Prepare visual stimulus generation
-
-        # Get screen dimensions and set up full screen.
-        screen_info = pygame.display.Info()
-        screen_width = screen_info.current_w
-        screen_height = screen_info.current_h
-        screen = pygame.display.set_mode(
-            (screen_width, screen_height), pygame.FULLSCREEN
-        )
-        pygame.display.set_caption("Image Presentation Experiment")
-        pygame.mouse.set_visible(False)
-
-        try:
-            # Initial grey screen.
-            pygame.time.wait(100)
-            screen.fill(background_color)
-            pygame.display.flip()
-            pygame.time.wait(100)
-            screen.fill(background_color)
-            pygame.display.flip()
-
-            # Clear board buffer.
-            _, _ = eeg_device.get_board_data()
-
-            # Pause for specified number of milliseconds.
-            pygame.time.delay(int(round(inter_block_rest_duration * 1000.0)))
-
-            # Loop over trials.
-            for idx_trial in range(n_trials):
-                if not running:  # Check for quit event
-                    break
-
-                # ----------------------------------------------------------------------
-                # *** (1) Stimulus presentation (image or word)
-
-                # E.g. "apple".
-                stimulus_class = trial_order[idx_trial]["stimulus_class"]
-                # "text" or "image".
-                stimulus_type = trial_order[idx_trial]["stimulus_type"]
-
-                # Show image.
-                if stimulus_type == "image":
-                    # Sample the next image.
-                    image_file_path = sample_next_image(
-                        next_image_category=stimulus_class,
-                        category_to_filepath=category_to_filepath,
-                        previous_image_file_path=None,
-                    )
-
-                    # Load the next image.
-                    image_and_metadata = load_and_scale_image(
-                        image_file_path=image_file_path,
-                        screen_width=screen_width,
-                        screen_height=screen_height,
-                    )
-                    if image_and_metadata is None:
-                        raise AssertionError(
-                            f"Failed to load stimulus: {image_file_path}"
-                        )
-
-                    current_image = image_and_metadata["image"]
-
-                    img_rect = current_image.get_rect(
-                        center=(screen_width // 2, screen_height // 2)
-                    )
-                    screen.fill(background_color)
-                    screen.blit(current_image, img_rect)
-
-                # Show text.
-                else:
-                    image_file_path = None
-
-                    # Clear previous stimulus.
-                    screen.fill(background_color)
-
-                    stimulus_text = render_spaced_text(
-                        text=stimulus_class,
-                        font=stimulus_font,
-                        color=stimulus_font_color,
-                        spacing=stimulus_font_spacing,
-                    )
-
-                    stimulus_rect = stimulus_text.get_rect(
-                        center=(screen_width // 2, screen_height // 2)
-                    )
-                    screen.blit(stimulus_text, stimulus_rect)
-
-                pygame.display.flip()
-                # Start of stimulus presentation.
-                t_stim_start = eeg_device.lsl_local_clock()
-
-                # When using an OpenBCI device, we insert a stimulus marker into the
-                # time series data on the EEG board. These markers can be used during
-                # analysis to identify stimulus events. For the DSI-24 device, we
-                # instead use LSL timestamps stored in the hdf5 file for identifying
-                # stimulus events.
-                if device_type in ["cyton", "synthetic"]:
-                    eeg_device.insert_marker(global_config.stim_start_marker)
-                else:
-                    data_logging_queue.put(
-                        {
-                            "type": "marker",
-                            "marker_value": global_config.stim_start_marker,
-                            "timestamp": t_stim_start,
-                        }
-                    )
-
-                # Send pre-stimulus EEG data (to avoid buffer overflow).
-                eeg_data, eeg_ts = eeg_device.get_board_data()
-                if eeg_data.size > 0:
-                    data_logging_queue.put(
-                        {
-                            "type": "eeg",
-                            "eeg_data": eeg_data,
-                            "eeg_timestamps": eeg_ts,
-                        }
-                    )
-
-                # Wait for image duration, but check for responses continuously.
-                t_stim_end_expected = t_stim_start + stimulus_duration
-                while eeg_device.lsl_local_clock() < t_stim_end_expected:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                        if event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_ESCAPE:
-                                running = False
-                    if not running:
-                        break
-                if not running:
-                    break
-
-                # ----------------------------------------------------------------------
-                # *** (2) Post-stimulus delay
-
-                # End of stimulus presentation. Display empty screen.
-                screen.fill(background_color)
-                pygame.display.flip()
-                t_stim_end_actual = eeg_device.lsl_local_clock()
-
-                if device_type in ["cyton", "synthetic"]:
-                    eeg_device.insert_marker(global_config.stim_end_marker)
-                else:
-                    data_logging_queue.put(
-                        {
-                            "type": "marker",
-                            "marker_value": global_config.stim_end_marker,
-                            "timestamp": t_stim_end_actual,
-                        }
-                    )
-
-                # Send EEG data from stimulus presentation period.
-                eeg_data, eeg_ts = eeg_device.get_board_data()
-                if eeg_data.size > 0:
-                    data_logging_queue.put(
-                        {
-                            "type": "eeg",
-                            "eeg_data": eeg_data,
-                            "eeg_timestamps": eeg_ts,
-                        }
-                    )
-
-                # Time until when to show empty screen (post-stimulus delay).
-                t_delay_end = t_stim_end_actual + post_stim_interval
-
-                # Continue checking for quit events.
-                while eeg_device.lsl_local_clock() < t_delay_end:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                        if event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_ESCAPE:
-                                running = False
-                    if not running:
-                        break
-                if not running:
-                    break
-
-                # ----------------------------------------------------------------------
-                # *** (3) Silent speech
-
-                silent_speech_cue_onsets = []
-
-                for idx_repetition in range(n_repetitions_per_trial):
-                    # Play the tone that cues the beginning of an inner speech
-                    # repetition. Note that `.play()` is non-blocking.
-                    audio_cue_tone.play()
-
-                    # Because `.play()` is non-blocking, we only log the onset of
-                    # the audio cue (and not the end).
-                    t_cue_start = eeg_device.lsl_local_clock()
-
-                    silent_speech_cue_onsets.append(t_cue_start)
-
-                    if device_type in ["cyton", "synthetic"]:
-                        eeg_device.insert_marker(global_config.cue_start_marker)
-                    else:
-                        data_logging_queue.put(
-                            {
-                                "type": "marker",
-                                "marker_value": global_config.cue_start_marker,
-                                "timestamp": t_cue_start,
-                            }
-                        )
-
-                    # Send EEG data from silent speech period.
-                    eeg_data, eeg_ts = eeg_device.get_board_data()
-                    if eeg_data.size > 0:
-                        data_logging_queue.put(
-                            {
-                                "type": "eeg",
-                                "eeg_data": eeg_data,
-                                "eeg_timestamps": eeg_ts,
-                            }
-                        )
-
-                    # Continue checking for quit events.
-                    t_repeat_end_expected = t_cue_start + repeat_duration
-                    while eeg_device.lsl_local_clock() < t_repeat_end_expected:
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                running = False
-                            if event.type == pygame.KEYDOWN:
-                                if event.key == pygame.K_ESCAPE:
-                                    running = False
-                        if not running:
-                            break
-                    if not running:
-                        break
-
-                # ----------------------------------------------------------------------
-                # *** (4) Attention task
-
-                # Is this a target trial?
-                if idx_trial in target_trial_idcs:
-                    is_target = True
-                    response_log = []
-
-                    if stimulus_type == "image":
-                        question_text = "Which was the last image?"
-                    else:
-                        question_text = "Which was the last word?"
-
-                    answers = []
-                    for object_class in object_classes:
-                        # Is the current object class (e.g. "apple") the correct one;
-                        # i.e. the one shown on the last trial?
-                        is_correct = stimulus_class == object_class
-                        answers.append({"answer": object_class, "correct": is_correct})
-
-                    # Only show 4 answer options (the correct one and three incorrect
-                    # ones).
-                    correct_options = [opt for opt in answers if opt["correct"]]
-                    incorrect_options = [opt for opt in answers if not opt["correct"]]
-                    # Randomly sample 3 items from the incorrect options (and handle
-                    # cases where there are fewer than 3 incorrect options).
-                    num_to_sample = min(3, len(incorrect_options))
-                    sampled_incorrect = random.sample(incorrect_options, num_to_sample)
-                    answers = correct_options + sampled_incorrect
-                    random.shuffle(answers)
-
-                    # Clear screen for the question.
-                    screen.fill(background_color)
-
-                    y_pos = int(screen_height * 0.2)
-
-                    y_pos = draw_text_wrapped(
-                        surface=screen,
-                        text=question_text,
-                        font=stimulus_font,
-                        color=stimulus_font_color,
-                        y_start=y_pos,
-                        max_width=screen_width * 0.8,
-                        screen_width=screen_width,
-                    )
-                    y_pos += 60  # Add extra spacing before options
-
-                    # Draw answer options.
-                    for a_idx, ans_data in enumerate(answers):
-                        ans_text = f"[{a_idx + 1}] {ans_data['answer']}"
-                        y_pos = draw_text_wrapped(
-                            surface=screen,
-                            text=ans_text,
-                            font=stimulus_font,
-                            color=stimulus_font_color,
-                            y_start=y_pos,
-                            max_width=screen_width * 0.8,
-                            screen_width=screen_width,
-                        )
-                        y_pos += 30  # Spacing between answers
-
-                    pygame.display.flip()
-
-                    # Flush any lingering key presses from the previous question's
-                    # feedback period (or accidental double-taps).
-                    pygame.event.clear()
-
-                    # Capture start time in milliseconds.
-                    start_ticks = pygame.time.get_ticks()
-
-                    # Log EEG data (to avoid buffer overflow).
-                    eeg_data, eeg_ts = eeg_device.get_board_data()
-                    if eeg_data.size > 0:
-                        data_logging_queue.put(
-                            {
-                                "type": "eeg",
-                                "eeg_data": eeg_data,
-                                "eeg_timestamps": eeg_ts,
-                            }
-                        )
-
-                    answered = False
-                    while not answered and running:
-                        # Wait for participant input.
-                        for event in pygame.event.get():
-                            if event.type == pygame.QUIT:
-                                running = False
-                            elif event.type == pygame.KEYDOWN:
-                                if event.key == pygame.K_ESCAPE:
-                                    running = False
-                                # Map keys 1-4 (standard number row or numpad) to answer
-                                # indices 0-3.
-                                elif (
-                                    pygame.K_1 <= event.key <= pygame.K_9
-                                    or pygame.K_KP1 <= event.key <= pygame.K_KP9
-                                ):
-                                    # Determine which number was pressed, handling both
-                                    # top row and numpad.
-                                    if pygame.K_1 <= event.key <= pygame.K_9:
-                                        selected_idx = event.key - pygame.K_1
-                                    else:
-                                        selected_idx = event.key - pygame.K_KP1
-
-                                    # Check if the pressed key corresponds to a valid
-                                    # option.
-                                    if selected_idx < len(answers):
-                                        is_correct = answers[selected_idx]["correct"]
-
-                                        # Calculate response time (in seconds).
-                                        response_time = (
-                                            pygame.time.get_ticks() - start_ticks
-                                        ) / 1000.0
-
-                                        # Log the participant's decision and reaction
-                                        # time.
-                                        response_log.append(
-                                            {
-                                                "selected_answer_idx": selected_idx,
-                                                "is_correct": is_correct,
-                                                "response_time": response_time,
-                                            }
-                                        )
-
-                                        if is_correct:
-                                            n_target_events_correct += 1
-                                            feedback_text = "Correct"
-                                            feedback_color = (0, 255, 0)  # Green
-                                        else:
-                                            n_target_events_incorrect += 1
-                                            feedback_text = "Incorrect"
-                                            feedback_color = (255, 0, 0)  # Red
-
-                                        answered = True
-
-                    # Display feedback (whether the answer was correct).
-                    if not running:
-                        break
-
-                    screen.fill(background_color)
-                    feedback_surface = stimulus_font.render(
-                        feedback_text, True, feedback_color
-                    )
-                    feedback_rect = feedback_surface.get_rect(
-                        center=(screen_width // 2, screen_height // 2)
-                    )
-                    screen.blit(feedback_surface, feedback_rect)
-                    pygame.display.flip()
-
-                    # Pause for participant to read the feedback.
-                    pygame.time.delay(1000)
-
-                    # If the answer was incorrect, show the correct answer.
-                    if not is_correct:
-                        # Find the correct answer text.
-                        correct_answer_text = None
-                        for a_idx, ans_data in enumerate(answers):
-                            if ans_data["correct"]:
-                                correct_answer_text = (
-                                    f"[{a_idx + 1}] {ans_data['answer']}"
-                                )
-                                break
-
-                        if correct_answer_text is not None:
-                            screen.fill(background_color)
-                            y_pos = int(screen_height * 0.4)
-                            y_pos = draw_text_wrapped(
-                                surface=screen,
-                                text="The correct answer was:",
-                                font=stimulus_font,
-                                color=stimulus_font_color,
-                                y_start=y_pos,
-                                max_width=screen_width * 0.8,
-                                screen_width=screen_width,
-                            )
-                            y_pos += 60
-                            y_pos = draw_text_wrapped(
-                                surface=screen,
-                                text=correct_answer_text,
-                                font=stimulus_font,
-                                color=stimulus_font_color,
-                                y_start=y_pos,
-                                max_width=screen_width * 0.8,
-                                screen_width=screen_width,
-                            )
-                            pygame.display.flip()
-                            pygame.time.delay(1000)
-
-                    attention_task_log = {
-                        "question": question_text,
-                        "answers": answers,
-                        "response_log": response_log,
-                    }
-
-                    # Log EEG data (to avoid buffer overflow).
-                    eeg_data, eeg_ts = eeg_device.get_board_data()
-                    if eeg_data.size > 0:
-                        data_logging_queue.put(
-                            {
-                                "type": "eeg",
-                                "eeg_data": eeg_data,
-                                "eeg_timestamps": eeg_ts,
-                            }
-                        )
-
-                else:
-                    # Not a target trial.
-                    is_target = False
-                    attention_task_log = None
-
-                # ----------------------------------------------------------------------
-                # *** Log stimulus data
-
-                stimulus_data = {
-                    "idx_trial": idx_trial,
-                    "stimulus_class": stimulus_class,  # E.g. "apple"
-                    "stimulus_type": stimulus_type,  # "text" or "image"
-                    "image_file_path": image_file_path,  # None if text trial
-                    "stimulus_start_time": t_stim_start,
-                    "stimulus_end_time": t_stim_end_actual,
-                    "silent_speech_cue_onsets": silent_speech_cue_onsets,
-                    "is_target": is_target,
-                    "attention_task_log": attention_task_log,
-                }
-
-                data_logging_queue.put(
-                    {"type": "stimulus", "stimulus_data": stimulus_data}
-                )
-
-                # ----------------------------------------------------------------------
-                # *** (5) Inter-trial interval
-
-                # Inter-stimulus interval. Display empty screen.
-                screen.fill(background_color)
-                pygame.display.flip()
-
-                # Time until when to show empty screen (post-stimulus delay).
-                t_isi_end = (
-                    eeg_device.lsl_local_clock()
-                    + inter_trial_interval
-                    + np.random.uniform(low=0.0, high=inter_trial_jitter)
-                )
-
-                # Continue checking for quit events.
-                while eeg_device.lsl_local_clock() < t_isi_end:
-                    for event in pygame.event.get():
-                        if event.type == pygame.QUIT:
-                            running = False
-                        if event.type == pygame.KEYDOWN:
-                            if event.key == pygame.K_ESCAPE:
-                                running = False
-                    if not running:
-                        break
-                if not running:
-                    break
-
-                # Log EEG data (to avoid buffer overflow).
-                eeg_data, eeg_ts = eeg_device.get_board_data()
-                if eeg_data.size > 0:
-                    data_logging_queue.put(
-                        {
-                            "type": "eeg",
-                            "eeg_data": eeg_data,
-                            "eeg_timestamps": eeg_ts,
-                        }
-                    )
-
-                # ----------------------------------------------------------------------
-                # *** (6) Inter-block interval
-
-                if ((idx_trial + 1) % n_trials_per_block) == 0:
-                    # Until when to stay in the inter-block interval.
-                    t_ibi_end = eeg_device.lsl_local_clock() + inter_block_rest_duration
-
-                    # Do not play tone if this is the end of the run.
-                    if (idx_trial + 1) == n_trials:
-                        print("Inter-block interval, end of run, disable IBI audio cue")
-                        use_ibi_audio_cue = False
-
-                    if use_ibi_audio_cue:
-                        # Audio cue to signal the beginning of the inter-block interval.
-                        pure_tone_start.play()
-
-                        # Time when to play audio cue to signal end of inter-block
-                        # interval.
-                        t_ibi_end_audio_cue = t_ibi_end - pure_tone_end_delay
-                        ibi_end_cue_played_yet = False
-
-                    while eeg_device.lsl_local_clock() < t_ibi_end:
-                        if (
-                            use_ibi_audio_cue
-                            and (t_ibi_end_audio_cue <= eeg_device.lsl_local_clock())
-                            and not ibi_end_cue_played_yet
-                        ):  # Time to play end of inter-block interval cue?
-                            # Play the cue to signal the end of the inter-block
-                            # interval.
-                            pure_tone_end.play()
-                            ibi_end_cue_played_yet = True
-
-                    # Send inter-block EEG data (to avoid buffer overflow).
-                    eeg_data, eeg_ts = eeg_device.get_board_data()
-                    if eeg_data.size > 0:
-                        data_logging_queue.put(
-                            {
-                                "type": "eeg",
-                                "eeg_data": eeg_data,
-                                "eeg_timestamps": eeg_ts,
-                            }
-                        )
+        pure_tone_start = pygame.sndarray.make_sound(tone_data_start)
+        pure_tone_end = pygame.sndarray.make_sound(tone_data_end)
+
+    # ----------------------------------------------------------------------------------
+    # *** Prepare font
+
+    stimulus_font = pygame.font.SysFont(
+        stimulus_font_name,
+        stimulus_font_size,
+        bold=stimulus_font_is_bold,
+        italic=stimulus_font_is_italic,
+    )
+
+    # ----------------------------------------------------------------------------------
+    # *** Prepare visual stimulus generation
+
+    # Get screen dimensions and set up full screen.
+    screen_info = pygame.display.Info()
+    screen_width = screen_info.current_w
+    screen_height = screen_info.current_h
+    screen = pygame.display.set_mode((screen_width, screen_height), pygame.FULLSCREEN)
+    pygame.display.set_caption("Image Presentation Experiment")
+    pygame.mouse.set_visible(False)
+
+    try:
+        # Initial grey screen.
+        pygame.time.wait(100)
+        screen.fill(background_color)
+        pygame.display.flip()
+        pygame.time.wait(100)
+        screen.fill(background_color)
+        pygame.display.flip()
+
+        # Clear board buffer.
+        io.discard_eeg()
+
+        # Pause for specified number of milliseconds.
+        pygame.time.delay(int(round(inter_block_rest_duration * 1000.0)))
+
+        # Loop over trials.
+        for idx_trial in range(n_trials):
+            if not running:  # Check for quit event
+                break
 
             # --------------------------------------------------------------------------
-            # *** End of run
+            # *** (1) Stimulus presentation (image or word)
 
-            # Log behavioural results.
-            behavioural_data = {
-                "n_target_events_correct": n_target_events_correct,
-                "n_target_events_incorrect": n_target_events_incorrect,
-            }
-            data_logging_queue.put(
-                {"type": "behavioural", "behavioural_data": behavioural_data}
-            )
+            # E.g. "apple".
+            stimulus_class = trial_order[idx_trial]["stimulus_class"]
+            # "text" or "image".
+            stimulus_type = trial_order[idx_trial]["stimulus_type"]
 
-            running = False
-
-            # Send final board data.
-            eeg_data, eeg_ts = eeg_device.get_board_data()
-            if eeg_data.size > 0:
-                data_logging_queue.put(
-                    {"type": "eeg", "eeg_data": eeg_data, "eeg_timestamps": eeg_ts}
+            # Show image.
+            if stimulus_type == "image":
+                # Sample the next image.
+                image_file_path = sample_next_image(
+                    next_image_category=stimulus_class,
+                    category_to_filepath=category_to_filepath,
+                    previous_image_file_path=None,
                 )
 
-        except Exception as e:
-            print(f"An error occurred during the experiment: {e}")
-            print(traceback.format_exc())
-            running = False
-        finally:
-            pygame.quit()
-            print("Experiment closed.")
+                # Load the next image.
+                image_and_metadata = load_and_scale_image(
+                    image_file_path=image_file_path,
+                    screen_width=screen_width,
+                    screen_height=screen_height,
+                )
+                if image_and_metadata is None:
+                    raise AssertionError(f"Failed to load stimulus: {image_file_path}")
+
+                current_image = image_and_metadata["image"]
+
+                img_rect = current_image.get_rect(
+                    center=(screen_width // 2, screen_height // 2)
+                )
+                screen.fill(background_color)
+                screen.blit(current_image, img_rect)
+
+            # Show text.
+            else:
+                image_file_path = None
+
+                # Clear previous stimulus.
+                screen.fill(background_color)
+
+                stimulus_text = render_spaced_text(
+                    text=stimulus_class,
+                    font=stimulus_font,
+                    color=stimulus_font_color,
+                    spacing=stimulus_font_spacing,
+                )
+
+                stimulus_rect = stimulus_text.get_rect(
+                    center=(screen_width // 2, screen_height // 2)
+                )
+                screen.blit(stimulus_text, stimulus_rect)
+
+            pygame.display.flip()
+            # Start of stimulus presentation.
+            t_stim_start = io.now()
+
+            # When using an OpenBCI device, this inserts a hardware marker into the
+            # board's time series; for the DSI-24 it queues an LSL-timestamped marker
+            # instead. Both paths are handled by io.emit_marker().
+            io.emit_marker(global_config.stim_start_marker, t_stim_start)
+
+            # Send pre-stimulus EEG data (to avoid buffer overflow).
+            io.drain_eeg()
+
+            # Wait for image duration, but check for responses continuously.
+            if io.wait_until(t_stim_start + stimulus_duration):
+                running = False
+                break
+
+            # --------------------------------------------------------------------------
+            # *** (2) Post-stimulus delay
+
+            # End of stimulus presentation. Display empty screen.
+            screen.fill(background_color)
+            pygame.display.flip()
+            t_stim_end_actual = io.now()
+
+            io.emit_marker(global_config.stim_end_marker, t_stim_end_actual)
+
+            # Send EEG data from stimulus presentation period.
+            io.drain_eeg()
+
+            # Show empty screen for the post-stimulus delay.
+            if io.wait_until(t_stim_end_actual + post_stim_interval):
+                running = False
+                break
+
+            # --------------------------------------------------------------------------
+            # *** (3) Silent speech
+
+            silent_speech_cue_onsets = []
+
+            for idx_repetition in range(n_repetitions_per_trial):
+                # Play the tone that cues the beginning of an inner speech repetition.
+                # Note that `.play()` is non-blocking, so the timestamp below is the
+                # command time, not the acoustic onset.
+                audio_cue_tone.play()
+                t_cue_start = io.now()
+
+                silent_speech_cue_onsets.append(t_cue_start)
+
+                # Marker uses the command time.
+                io.emit_marker(global_config.cue_start_marker, t_cue_start)
+
+                # Send EEG data from silent speech period.
+                io.drain_eeg()
+
+                # Wait out this repetition, checking for quit events.
+                if io.wait_until(t_cue_start + repeat_duration):
+                    running = False
+                    break
+
+            if not running:
+                break
+
+            # --------------------------------------------------------------------------
+            # *** (4) Attention task
+
+            if idx_trial in target_trial_idcs:
+                is_target = True
+
+                result = run_attention_task(
+                    io=io,
+                    screen=screen,
+                    screen_width=screen_width,
+                    screen_height=screen_height,
+                    background_color=background_color,
+                    stimulus_font=stimulus_font,
+                    stimulus_font_color=stimulus_font_color,
+                    stimulus_class=stimulus_class,
+                    stimulus_type=stimulus_type,
+                    object_classes=object_classes,
+                )
+
+                attention_task_log = result["log"]
+
+                if result["was_correct"] is True:
+                    n_target_events_correct += 1
+                elif result["was_correct"] is False:
+                    n_target_events_incorrect += 1
+
+                if result["quit_requested"]:
+                    # Quit during the attention task.
+                    running = False
+                    break
+            else:
+                # Not a target trial.
+                is_target = False
+                attention_task_log = None
+
+            # --------------------------------------------------------------------------
+            # *** Log stimulus data
+
+            stimulus_data = {
+                "idx_trial": idx_trial,
+                "stimulus_class": stimulus_class,  # E.g. "apple"
+                "stimulus_type": stimulus_type,  # "text" or "image"
+                "image_file_path": image_file_path,  # None if text trial
+                "stimulus_start_time": t_stim_start,
+                "stimulus_end_time": t_stim_end_actual,
+                "silent_speech_cue_onsets": silent_speech_cue_onsets,
+                "is_target": is_target,
+                "attention_task_log": attention_task_log,
+            }
+
+            data_logging_queue.put({"type": "stimulus", "stimulus_data": stimulus_data})
+
+            # --------------------------------------------------------------------------
+            # *** (5) Inter-trial interval
+
+            # Inter-stimulus interval. Display empty screen.
+            screen.fill(background_color)
+            pygame.display.flip()
+
+            # Time until when to show empty screen (post-stimulus delay).
+            t_isi_end = (
+                io.now()
+                + inter_trial_interval
+                + np.random.uniform(low=0.0, high=inter_trial_jitter)
+            )
+
+            if io.wait_until(t_isi_end):
+                running = False
+                break
+
+            # Log EEG data (to avoid buffer overflow).
+            io.drain_eeg()
+
+            # --------------------------------------------------------------------------
+            # *** (6) Inter-block interval
+
+            if ((idx_trial + 1) % n_trials_per_block) == 0:
+                # Until when to stay in the inter-block interval.
+                t_ibi_end = io.now() + inter_block_rest_duration
+
+                # Do not play tone if this is the end of the run.
+                if (idx_trial + 1) == n_trials:
+                    print("Inter-block interval, end of run, disable IBI audio cue")
+                    use_ibi_audio_cue = False
+
+                t_ibi_end_audio_cue = None
+                if use_ibi_audio_cue:
+                    # Audio cue to signal the beginning of the inter-block interval.
+                    pure_tone_start.play()
+                    # Time when to play the cue signalling the end of the interval.
+                    t_ibi_end_audio_cue = t_ibi_end - pure_tone_end_delay
+
+                # Mutable state for the on_tick closure (so it can remember whether the
+                # end-cue has already been played this interval).
+                ibi_state = {"end_cue_played": False}
+
+                def ibi_tick():
+                    if (
+                        use_ibi_audio_cue
+                        and not ibi_state["end_cue_played"]
+                        and t_ibi_end_audio_cue is not None
+                        and io.now() >= t_ibi_end_audio_cue
+                    ):
+                        pure_tone_end.play()
+                        ibi_state["end_cue_played"] = True
+
+                # Pump the event queue (via io.wait_until), so we can quit during rest.
+                if io.wait_until(t_ibi_end, on_tick=ibi_tick):
+                    running = False
+
+                # Send inter-block EEG data (to avoid buffer overflow).
+                io.drain_eeg()
+
+                if not running:
+                    break
+
+        # ------------------------------------------------------------------------------
+        # *** End of run
+
+        # Log behavioural results.
+        behavioural_data = {
+            "n_target_events_correct": n_target_events_correct,
+            "n_target_events_incorrect": n_target_events_incorrect,
+        }
+        data_logging_queue.put(
+            {"type": "behavioural", "behavioural_data": behavioural_data}
+        )
+
+        # Send final board data.
+        io.drain_eeg()
+
+    except Exception as e:
+        print(f"An error occurred during the experiment: {e}")
+        print(traceback.format_exc())
+    finally:
+        pygame.quit()
+        print("Experiment closed.")
 
     eeg_device.stop_stream()
     eeg_device.release_session()
