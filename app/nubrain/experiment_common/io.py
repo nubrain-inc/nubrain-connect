@@ -21,7 +21,7 @@ import pygame
 _HARDWARE_MARKER_DEVICES = ("cyton", "synthetic")
 
 
-def pump_events() -> bool:
+def pump_events(on_event=None) -> bool:
     """
     Drain the pygame event queue and report whether the run should stop.
 
@@ -29,12 +29,18 @@ def pump_events() -> bool:
     Pumping the queue on every frame is also what keeps the OS from flagging the window
     as unresponsive during long waits, so this should be called from every waiting
     phase (such as ISI, inter-block rest).
+
+    `on_event`, if given, is called with every event that is not a quit / escape (e.g. a
+    spacebar press on a target event), which lets a caller collect responses during a
+    timed wait. The callback receives the raw pygame event.
     """
     for event in pygame.event.get():
         if event.type == pygame.QUIT:
             return True
         if event.type == pygame.KEYDOWN and event.key == pygame.K_ESCAPE:
             return True
+        if on_event is not None:
+            on_event(event)
     return False
 
 
@@ -59,7 +65,7 @@ class ExperimentIO:
         return self.eeg_device.lsl_local_clock()
 
     # Timed, interruptible waits.
-    def wait_until(self, t_end: float, on_tick=None) -> bool:
+    def wait_until(self, t_end: float, on_tick=None, on_event=None) -> bool:
         """
         Busy-wait until `t_end` (EEG clock), pumping events each iteration.
 
@@ -67,18 +73,22 @@ class ExperimentIO:
         time-dependent side effects during the wait (e.g. a tone scheduled for partway
         through an inter-block interval).
 
+        `on_event`, if given, is called for every non-quit pygame event; use it to
+        collect responses (e.g. a button press during an attention trial) during the
+        wait. It is forwarded to `pump_events`.
+
         Returns True if a quit was requested while waiting. Callers should treat True as
         "stop the run" (set their `running` flag and break).
         """
         while self.now() < t_end:
-            if pump_events():
+            if pump_events(on_event):
                 return True
             if on_tick is not None:
                 on_tick()
         return False
 
     # Markers.
-    def emit_marker(self, marker_value: int, timestamp: float) -> None:
+    def emit_marker(self, marker_value, timestamp: float) -> None:
         """
         Record a stimulus marker using the device-appropriate channel.
 
@@ -86,8 +96,6 @@ class ExperimentIO:
         series; other devices get an LSL-timestamped marker via the data-logging queue.
         """
         if self.device_type in _HARDWARE_MARKER_DEVICES:
-            # `timestamp` is ignored for hardware-marker devices (the marker lands at
-            # the current board sample).
             self.eeg_device.insert_marker(marker_value)
         else:
             self.data_logging_queue.put(
