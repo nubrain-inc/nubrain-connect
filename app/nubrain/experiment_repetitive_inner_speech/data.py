@@ -193,33 +193,22 @@ def eeg_data_logging(subprocess_params: dict):
         )
 
         # ------------------------------------------------------------------------------
-        # *** Initialize hdf5 dataset for stimulus data
+        # *** Initialize hdf5 datasets for stimulus and target data
 
-        # Define the compound datatype for stimulus data. This is like defining the
-        # columns of a table.
+        # Main stimulus dataset (common to all trials).
         stimulus_dtype = np.dtype(
             [
                 ("idx_trial", np.int64),
-                # E.g. "apple"
                 ("stimulus_class", h5py.string_dtype(encoding="utf-8")),
-                # "text" or "image"
                 ("stimulus_type", h5py.string_dtype(encoding="utf-8")),
-                # None if text trial
                 ("image_file_path", h5py.string_dtype(encoding="utf-8")),
                 ("stimulus_start_time", np.float64),
                 ("stimulus_end_time", np.float64),
+                ("is_target", bool),
             ]
             + [
                 (f"silent_speech_cue_onset_{x}", np.float64)
                 for x in range(n_repetitions_per_trial)
-            ]
-            + [
-                ("is_target", np.bool),
-                ("attention_task_question", h5py.string_dtype(encoding="utf-8")),
-                ("attention_task_answer_options", h5py.string_dtype(encoding="utf-8")),
-                ("attention_task_selected_answer_idx", np.int64),
-                ("attention_task_is_correct", np.bool),
-                ("attention_task_response_time", np.float64),
             ]
         )
 
@@ -227,6 +216,24 @@ def eeg_data_logging(subprocess_params: dict):
             "stimulus_data",
             (n_trials,),
             dtype=stimulus_dtype,
+        )
+
+        # Target dataset (specific to target events).
+        targets_dtype = np.dtype(
+            [
+                ("idx_trial", np.int64),  # Foreign key to link back to stimulus_data
+                ("attention_task_question", h5py.string_dtype(encoding="utf-8")),
+                ("attention_task_answer_options", h5py.string_dtype(encoding="utf-8")),
+                ("attention_task_selected_answer_idx", np.int64),
+                ("attention_task_is_correct", bool),
+                ("attention_task_response_time", np.float64),
+            ]
+        )
+
+        file.create_dataset(
+            "targets",
+            (n_target_events,),
+            dtype=targets_dtype,
         )
 
         # ------------------------------------------------------------------------------
@@ -249,6 +256,7 @@ def eeg_data_logging(subprocess_params: dict):
     # *** Experiment loop
 
     stimulus_counter = 0
+    target_counter = 0
 
     while True:
         new_data = data_logging_queue.get(block=True)
@@ -296,84 +304,84 @@ def eeg_data_logging(subprocess_params: dict):
                     hdf5_marker_data[:, n_existing] = (marker_timestamp, marker_value)
 
             # --------------------------------------------------------------------------
-            # *** Write stimulus data to hdf5 file
+            # *** Write stimulus and target data to hdf5 file
 
             elif data_type == "stimulus":
                 new_stimulus_data = new_data.get("stimulus_data")
 
                 if new_stimulus_data is not None:
+                    # Write to main stimulus dataset.
                     hdf5_stimulus_data = file["stimulus_data"]
+                    data_to_write_stim = np.empty((1,), dtype=stimulus_dtype)
 
-                    data_to_write = np.empty((1,), dtype=stimulus_dtype)
+                    data_to_write_stim[0]["idx_trial"] = new_stimulus_data["idx_trial"]
+                    data_to_write_stim[0]["stimulus_class"] = (
+                        new_stimulus_data.get("stimulus_class") or ""
+                    )
+                    data_to_write_stim[0]["stimulus_type"] = (
+                        new_stimulus_data.get("stimulus_type") or ""
+                    )
+                    data_to_write_stim[0]["image_file_path"] = (
+                        new_stimulus_data.get("image_file_path") or ""
+                    )
+                    data_to_write_stim[0]["stimulus_start_time"] = new_stimulus_data[
+                        "stimulus_start_time"
+                    ]
+                    data_to_write_stim[0]["stimulus_end_time"] = new_stimulus_data[
+                        "stimulus_end_time"
+                    ]
 
-                    idx_trial = new_stimulus_data["idx_trial"]
-                    stimulus_class = new_stimulus_data["stimulus_class"]
-                    stimulus_type = new_stimulus_data["stimulus_type"]
-                    image_file_path = new_stimulus_data["image_file_path"]
-                    stimulus_start_time = new_stimulus_data["stimulus_start_time"]
-                    stimulus_end_time = new_stimulus_data["stimulus_end_time"]
-
-                    data_to_write[0]["idx_trial"] = idx_trial
-                    data_to_write[0]["stimulus_class"] = stimulus_class
-                    data_to_write[0]["stimulus_type"] = stimulus_type
-                    data_to_write[0]["image_file_path"] = image_file_path
-                    data_to_write[0]["stimulus_start_time"] = stimulus_start_time
-                    data_to_write[0]["stimulus_end_time"] = stimulus_end_time
-
-                    # Loop over cue onset times (multiple per trial).
                     silent_speech_cue_onsets = new_stimulus_data[
                         "silent_speech_cue_onsets"
-                    ]  # list of float
+                    ]
                     for i in range(n_repetitions_per_trial):
-                        # Cue onset of current trial.
-                        _cue_onset = silent_speech_cue_onsets[i]
-                        data_to_write[0][f"silent_speech_cue_onset_{i}"] = _cue_onset
+                        data_to_write_stim[0][f"silent_speech_cue_onset_{i}"] = (
+                            silent_speech_cue_onsets[i]
+                        )
 
                     is_target = new_stimulus_data["is_target"]
-                    data_to_write[0]["is_target"] = is_target
+                    data_to_write_stim[0]["is_target"] = is_target
 
-                    attention_task_log = new_stimulus_data["attention_task_log"]
-
-                    if attention_task_log is None:
-                        # Current trial is not a target event.
-                        question = None
-                    else:
-                        question = attention_task_log["question"]  # str
-                    data_to_write[0]["attention_task_question"] = question
-
-                    if attention_task_log is None:
-                        # Current trial is not a target event.
-                        answers = None
-                    else:
-                        answers = attention_task_log["answers"]  # list of dict
-                        answers = json.dumps(answers)  # Answer options from dict to str
-                    data_to_write[0]["attention_task_answer_options"] = answers
-
-                    if attention_task_log is None:
-                        # Current trial is not a target event.
-                        aidx = -1  # Numpy integer does not support nan
-                    else:
-                        aidx = attention_task_log["response_log"]["selected_answer_idx"]
-                    data_to_write[0]["attention_task_selected_answer_idx"] = aidx
-
-                    if attention_task_log is None:
-                        # Current trial is not a target event.
-                        is_correct = False  # Cannot use None on boolean hdf5 field
-                    else:
-                        is_correct = attention_task_log["response_log"]["is_correct"]
-                    data_to_write[0]["attention_task_is_correct"] = is_correct
-
-                    if attention_task_log is None:
-                        # Current trial is not a target event.
-                        rspns_time = np.nan
-                    else:
-                        rspns_time = attention_task_log["response_log"]["response_time"]
-                    data_to_write[0]["attention_task_response_time"] = rspns_time
-
-                    # Write the structured array to the dataset.
-                    hdf5_stimulus_data[stimulus_counter] = data_to_write
-
+                    hdf5_stimulus_data[stimulus_counter] = data_to_write_stim
                     stimulus_counter += 1
+
+                    # Write to targets dataset (only if the current trial is a target
+                    # event).
+                    if is_target:
+                        hdf5_targets_data = file["targets"]
+                        data_to_write_target = np.empty((1,), dtype=targets_dtype)
+
+                        # Fetch the task log, defaulting to an empty dict if it somehow
+                        # arrived as None.
+                        attention_task_log = (
+                            new_stimulus_data.get("attention_task_log") or {}
+                        )
+                        response_log = attention_task_log.get("response_log") or {}
+
+                        # Write relational key.
+                        data_to_write_target[0]["idx_trial"] = new_stimulus_data[
+                            "idx_trial"
+                        ]
+
+                        data_to_write_target[0]["attention_task_question"] = (
+                            attention_task_log.get("question", "")
+                        )
+                        data_to_write_target[0]["attention_task_answer_options"] = (
+                            json.dumps(attention_task_log.get("answers", []))
+                        )
+                        # Integer data type does not support nan value, use -1 instead.
+                        data_to_write_target[0][
+                            "attention_task_selected_answer_idx"
+                        ] = response_log.get("selected_answer_idx", -1)
+                        data_to_write_target[0]["attention_task_is_correct"] = (
+                            response_log.get("is_correct", False)
+                        )
+                        data_to_write_target[0]["attention_task_response_time"] = (
+                            response_log.get("response_time", np.nan)
+                        )
+
+                        hdf5_targets_data[target_counter] = data_to_write_target
+                        target_counter += 1
 
             # --------------------------------------------------------------------------
             # *** Write behavioural data to hdf5 file
