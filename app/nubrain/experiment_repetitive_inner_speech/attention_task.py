@@ -7,13 +7,14 @@ from nubrain.experiment_text_comprehension.wrap_text import draw_text_wrapped
 
 
 def run_attention_task(
+    *,
     io: ExperimentIO,
-    screen,
+    screen: pygame.surface.Surface,
     screen_width: int,
     screen_height: int,
-    background_color,
-    stimulus_font,
-    stimulus_font_color,
+    background_color: tuple | list,
+    stimulus_font: pygame.font.Font,
+    stimulus_font_color: tuple | list,
     stimulus_class: str,
     stimulus_type: str,
     object_classes: list,
