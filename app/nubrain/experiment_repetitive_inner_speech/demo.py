@@ -23,7 +23,7 @@ from nubrain.text.rendering import render_spaced_text
 # mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
 
 
-def experiment_repetitive_inner_speech(config: dict):
+def demo_repetitive_inner_speech(config: dict):
     # ----------------------------------------------------------------------------------
     # *** Get config
 
