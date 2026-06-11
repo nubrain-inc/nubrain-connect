@@ -47,7 +47,6 @@ def experiment_repetitive_inner_speech(config: dict):
     stimulus_duration = config["stimulus_duration"]
     post_stim_interval = config["post_stim_interval"]
     n_repetitions_per_trial = config["n_repetitions_per_trial"]
-    cue_duration = config["cue_duration"]
     repeat_duration = config["repeat_duration"]
     inter_trial_interval = config["inter_trial_interval"]
     inter_trial_jitter = config["inter_trial_jitter"]
@@ -255,7 +254,6 @@ def experiment_repetitive_inner_speech(config: dict):
         "stimulus_duration": stimulus_duration,
         "post_stim_interval": post_stim_interval,
         "n_repetitions_per_trial": n_repetitions_per_trial,
-        "cue_duration": cue_duration,
         "repeat_duration": repeat_duration,
         "inter_trial_interval": inter_trial_interval,
         "inter_trial_jitter": inter_trial_jitter,

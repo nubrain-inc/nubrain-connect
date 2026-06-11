@@ -20,7 +20,7 @@ stimulus_duration: 0.5 # How long to show each word / image
 post_stim_interval: 1.2 # Interval between word / image and cue for inner speech
 # How often participants are prompted to repeat each word per trial.
 n_repetitions_per_trial: 3
-cue_duration: 0.1 # Duration of audio cue
+
 # Duration of the interval during which participants are instructed to engage in
 # repetitive inner speech. Note that pygame audio playback is non-blocking, and
 # therefore the duration of the cue (`audio_cue_duration`) is not added to the duration
