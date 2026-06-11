@@ -40,8 +40,6 @@ class EegExperimentConfig:
     post_stim_interval: float
 
     n_repetitions_per_trial: int
-    cue_duration: float
-
     repeat_duration: float
 
     inter_trial_interval: float

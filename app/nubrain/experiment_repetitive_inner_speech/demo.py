@@ -1,14 +1,14 @@
-import multiprocessing as mp
-import os
+"""
+Demo mode, does not use EEG device. Repetitive inner speech.
+"""
+
 import traceback
-from time import sleep
 
 import numpy as np
 import pygame
 
 from nubrain.audio.tone import generate_tone
-from nubrain.device.device_interface import create_eeg_device
-from nubrain.experiment_common.io import ExperimentIO
+from nubrain.experiment_common.dummy_io import DummyExperimentIO
 from nubrain.experiment_image.randomize_conditions import (
     create_balanced_list,
     sample_next_image,
@@ -16,33 +16,18 @@ from nubrain.experiment_image.randomize_conditions import (
     shuffle_dicts_with_repetitions,
 )
 from nubrain.experiment_repetitive_inner_speech.attention_task import run_attention_task
-from nubrain.experiment_repetitive_inner_speech.data import eeg_data_logging
-from nubrain.global_config import GlobalConfig
 from nubrain.image.tools import get_all_images, load_and_scale_image
-from nubrain.misc.datetime import get_formatted_current_datetime
 from nubrain.text.rendering import render_spaced_text
 
-mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
+# import multiprocessing as mp
+# mp.set_start_method("spawn", force=True)  # Necessary on if running on windows?
 
 
 def experiment_repetitive_inner_speech(config: dict):
     # ----------------------------------------------------------------------------------
     # *** Get config
 
-    device_type = config["device_type"]
-    lsl_stream_name = config["lsl_stream_name"]
-
-    subject_id = config["subject_id"]
-    session_id = config["session_id"]
-
-    utility_frequency = config["utility_frequency"]
-
-    output_directory = config["output_directory"]
     path_stimuli = config["path_stimuli"]
-
-    storage_bucket_name = config["storage_bucket_name"]
-    storage_blob_name = config["storage_blob_name"]
-    storage_bucket_credentials = config["storage_bucket_credentials"]
 
     stimulus_duration = config["stimulus_duration"]
     post_stim_interval = config["post_stim_interval"]
@@ -66,23 +51,6 @@ def experiment_repetitive_inner_speech(config: dict):
     audio_cue_frequency = config["audio_cue_frequency"]
     audio_cue_duration = config["audio_cue_duration"]
     audio_cue_amplitude = config["audio_cue_amplitude"]
-
-    eeg_channel_mapping = config.get("eeg_channel_mapping", None)
-    eeg_device_address = config.get("eeg_device_address", None)
-
-    global_config = GlobalConfig()
-
-    # ----------------------------------------------------------------------------------
-    # *** Test if output path exists
-
-    if not os.path.isdir(output_directory):
-        raise AssertionError(f"Target directory does not exist: {output_directory}")
-
-    current_datetime = get_formatted_current_datetime()
-    path_out_data = os.path.join(output_directory, f"eeg_{current_datetime}.h5")
-
-    if os.path.isfile(path_out_data):
-        raise AssertionError(f"Target file already exists: {path_out_data}")
 
     # ----------------------------------------------------------------------------------
     # *** Get input images & their categories
@@ -174,130 +142,9 @@ def experiment_repetitive_inner_speech(config: dict):
     )
 
     # ----------------------------------------------------------------------------------
-    # *** Prepare EEG measurement
+    # *** Dummy I/O helper (not using EEG device for demo mode)
 
-    print(f"Initializing EEG device: {device_type}")
-
-    device_kwargs = {"eeg_channel_mapping": eeg_channel_mapping}
-    if device_type in ["cyton", "synthetic"]:
-        device_kwargs["eeg_device_address"] = eeg_device_address
-    elif device_type == "dsi24":
-        device_kwargs["lsl_stream_name"] = lsl_stream_name
-    else:
-        raise ValueError(f"Unexpected `device_type`: {device_type}")
-
-    eeg_device = create_eeg_device(device_type, **device_kwargs)
-
-    eeg_device.prepare_session()
-
-    # This is a bit clunky. At this point, `eeg_channel_mapping` is None or a dict with
-    # a channel mapping from the config yaml file. Overwrite it with the channel mapping
-    # from the device (in case of the DSI-24 device, the channel mapping from the device
-    # is used in any case).
-    eeg_channel_mapping = eeg_device.eeg_channel_mapping
-
-    # Need to start the stream before calling `eeg_device.get_device_info()`, because
-    # we retrieve data from board to determine data shape (number of channels).
-    eeg_device.start_stream()
-    sleep(0.1)
-
-    # Get device info.
-    device_info = eeg_device.get_device_info()
-    eeg_board_description = device_info["board_description"]
-    eeg_sampling_rate = device_info["sampling_rate"]
-    eeg_channels = device_info["eeg_channels"]
-    marker_channel = device_info["marker_channel"]
-    n_channels_total = device_info["n_channels_total"]
-
-    if device_type in ["cyton", "synthetic"]:
-        # For Cyton device, we need to get the number of EEG channels from the device
-        # (not sure, this might only work after starting the stream).
-        eeg_device.eeg_channels = eeg_channels
-        eeg_device.timestamp_channel = eeg_board_description["timestamp_channel"]
-
-    print(f"Board: {eeg_board_description['name']}")
-    print(f"Sampling Rate: {eeg_sampling_rate} Hz")
-    print(f"EEG Channels: {eeg_channels}")
-    print(f"Marker Channel: {marker_channel}")
-    print(f"EEG Channel Mapping: {eeg_channel_mapping}")
-
-    board_data, board_timestamps = eeg_device.get_board_data()
-
-    print(f"Board data dtype: {board_data.dtype}")
-    print(f"Board data shape: {board_data.shape}")
-    print(f"Board timestamps shape: {board_timestamps.shape}")
-
-    # ----------------------------------------------------------------------------------
-    # *** Start data logging subprocess
-
-    data_logging_queue = mp.Queue()
-
-    subprocess_params = {
-        # EEG parameters
-        "device_type": device_type,
-        "lsl_stream_name": lsl_stream_name,
-        "utility_frequency": utility_frequency,
-        "eeg_board_description": eeg_board_description,
-        "eeg_sampling_rate": eeg_sampling_rate,
-        "n_channels_total": n_channels_total,
-        "eeg_channel_mapping": eeg_channel_mapping,
-        # Parameters not used by DSI-24, for compatibility with Cyton board
-        "eeg_device_address": eeg_device_address,
-        "eeg_channels": eeg_channels,
-        "marker_channel": marker_channel,
-        # Session parameters
-        "subject_id": subject_id,
-        "session_id": session_id,
-        # Experiment structure / timing
-        "trial_order": trial_order,
-        "target_trial_idcs": target_trial_idcs,
-        "stimulus_duration": stimulus_duration,
-        "post_stim_interval": post_stim_interval,
-        "n_repetitions_per_trial": n_repetitions_per_trial,
-        "repeat_duration": repeat_duration,
-        "inter_trial_interval": inter_trial_interval,
-        "inter_trial_jitter": inter_trial_jitter,
-        "n_trials": n_trials,
-        "n_trials_per_block": n_trials_per_block,
-        "inter_block_rest_duration": inter_block_rest_duration,
-        "n_blocks": n_blocks,
-        "n_target_events": n_target_events,
-        # Storage
-        "path_out_data": path_out_data,
-        "path_stimuli": path_stimuli,
-        "storage_bucket_name": storage_bucket_name,
-        "storage_blob_name": storage_blob_name,
-        "storage_bucket_credentials": storage_bucket_credentials,
-        # Stimulus properties
-        "stimulus_font_name": stimulus_font_name,
-        "stimulus_font_is_bold": stimulus_font_is_bold,
-        "stimulus_font_is_italic": stimulus_font_is_italic,
-        "stimulus_font_size": stimulus_font_size,
-        "stimulus_font_spacing": stimulus_font_spacing,
-        "stimulus_font_color": stimulus_font_color,
-        "background_color": background_color,
-        "audio_cue_frequency": audio_cue_frequency,
-        "audio_cue_duration": audio_cue_duration,
-        "audio_cue_amplitude": audio_cue_amplitude,
-        # Queue
-        "data_logging_queue": data_logging_queue,
-    }
-
-    logging_process = mp.Process(target=eeg_data_logging, args=(subprocess_params,))
-    logging_process.daemon = True
-    logging_process.start()
-
-    # ----------------------------------------------------------------------------------
-    # *** Set up shared I/O helper
-
-    # Bundles eeg_device + device_type + data_logging_queue so the trial loop
-    # below can use io.now(), io.wait_until(), io.emit_marker(), io.drain_eeg()
-    # without repeating the plumbing (or the device-specific marker branch).
-    io = ExperimentIO(
-        eeg_device=eeg_device,
-        device_type=device_type,
-        data_logging_queue=data_logging_queue,
-    )
+    io = DummyExperimentIO()
 
     # ----------------------------------------------------------------------------------
     # *** Start experiment
@@ -416,9 +263,6 @@ def experiment_repetitive_inner_speech(config: dict):
         screen.fill(background_color)
         pygame.display.flip()
 
-        # Clear board buffer.
-        io.discard_eeg()
-
         # Pause for specified number of milliseconds.
         pygame.time.delay(int(round(inter_block_rest_duration * 1000.0)))
 
@@ -484,14 +328,6 @@ def experiment_repetitive_inner_speech(config: dict):
             # Start of stimulus presentation.
             t_stim_start = io.now()
 
-            # When using an OpenBCI device, this inserts a hardware marker into the
-            # board's time series; for the DSI-24 it queues an LSL-timestamped marker
-            # instead. Both paths are handled by io.emit_marker().
-            io.emit_marker(global_config.stim_start_marker, t_stim_start)
-
-            # Send pre-stimulus EEG data (to avoid buffer overflow).
-            io.drain_eeg()
-
             # Wait for image duration, but check for responses continuously.
             if io.wait_until(t_stim_start + stimulus_duration):
                 running = False
@@ -504,11 +340,6 @@ def experiment_repetitive_inner_speech(config: dict):
             screen.fill(background_color)
             pygame.display.flip()
             t_stim_end_actual = io.now()
-
-            io.emit_marker(global_config.stim_end_marker, t_stim_end_actual)
-
-            # Send EEG data from stimulus presentation period.
-            io.drain_eeg()
 
             # Show empty screen for the post-stimulus delay.
             if io.wait_until(t_stim_end_actual + post_stim_interval):
@@ -528,12 +359,6 @@ def experiment_repetitive_inner_speech(config: dict):
                 t_cue_start = io.now()
 
                 silent_speech_cue_onsets.append(t_cue_start)
-
-                # Marker uses the command time.
-                io.emit_marker(global_config.cue_start_marker, t_cue_start)
-
-                # Send EEG data from silent speech period.
-                io.drain_eeg()
 
                 # Wait out this repetition, checking for quit events.
                 if io.wait_until(t_cue_start + repeat_duration):
@@ -579,23 +404,6 @@ def experiment_repetitive_inner_speech(config: dict):
                 attention_task_log = None
 
             # --------------------------------------------------------------------------
-            # *** Log stimulus data
-
-            stimulus_data = {
-                "idx_trial": idx_trial,
-                "stimulus_class": stimulus_class,  # E.g. "apple"
-                "stimulus_type": stimulus_type,  # "text" or "image"
-                "image_file_path": image_file_path,  # None if text trial
-                "stimulus_start_time": t_stim_start,
-                "stimulus_end_time": t_stim_end_actual,
-                "silent_speech_cue_onsets": silent_speech_cue_onsets,
-                "is_target": is_target,
-                "attention_task_log": attention_task_log,
-            }
-
-            data_logging_queue.put({"type": "stimulus", "stimulus_data": stimulus_data})
-
-            # --------------------------------------------------------------------------
             # *** (5) Inter-trial interval
 
             # Inter-stimulus interval. Display empty screen.
@@ -612,9 +420,6 @@ def experiment_repetitive_inner_speech(config: dict):
             if io.wait_until(t_isi_end):
                 running = False
                 break
-
-            # Log EEG data (to avoid buffer overflow).
-            io.drain_eeg()
 
             # --------------------------------------------------------------------------
             # *** (6) Inter-block interval
@@ -653,26 +458,8 @@ def experiment_repetitive_inner_speech(config: dict):
                 if io.wait_until(t_ibi_end, on_tick=ibi_tick):
                     running = False
 
-                # Send inter-block EEG data (to avoid buffer overflow).
-                io.drain_eeg()
-
                 if not running:
                     break
-
-        # ------------------------------------------------------------------------------
-        # *** End of run
-
-        # Log behavioural results.
-        behavioural_data = {
-            "n_target_events_correct": n_target_events_correct,
-            "n_target_events_incorrect": n_target_events_incorrect,
-        }
-        data_logging_queue.put(
-            {"type": "behavioural", "behavioural_data": behavioural_data}
-        )
-
-        # Send final board data.
-        io.drain_eeg()
 
     except Exception as e:
         print(f"An error occurred during the experiment: {e}")
@@ -680,10 +467,3 @@ def experiment_repetitive_inner_speech(config: dict):
     finally:
         pygame.quit()
         print("Experiment closed.")
-
-    eeg_device.stop_stream()
-    eeg_device.release_session()
-
-    print("Join process for sending data")
-    data_logging_queue.put(None)
-    logging_process.join()
