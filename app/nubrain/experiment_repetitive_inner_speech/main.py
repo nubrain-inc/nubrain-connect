@@ -55,6 +55,9 @@ def experiment_repetitive_inner_speech(config: dict):
     n_blocks = config["n_blocks"]
     n_target_events = config["n_target_events"]
 
+    fixation_radius = config["fixation_radius"]
+    fixation_color = config["fixation_color"]
+
     stimulus_font_name = config["stimulus_font_name"]
     stimulus_font_is_bold = config["stimulus_font_is_bold"]
     stimulus_font_is_italic = config["stimulus_font_is_italic"]
@@ -269,6 +272,8 @@ def experiment_repetitive_inner_speech(config: dict):
         "storage_blob_name": storage_blob_name,
         "storage_bucket_credentials": storage_bucket_credentials,
         # Stimulus properties
+        "fixation_radius": fixation_radius,
+        "fixation_color": fixation_color,
         "stimulus_font_name": stimulus_font_name,
         "stimulus_font_is_bold": stimulus_font_is_bold,
         "stimulus_font_is_italic": stimulus_font_is_italic,
@@ -407,14 +412,26 @@ def experiment_repetitive_inner_speech(config: dict):
     pygame.display.set_caption("Image Presentation Experiment")
     pygame.mouse.set_visible(False)
 
+    # ----------------------------------------------------------------------------------
+    # *** Fixation dot for rest / blank periods
+
+    def show_fixation():
+        """Fill the background, draw the black fixation dot, and flip the display."""
+        screen.fill(background_color)
+        pygame.draw.circle(
+            screen,
+            fixation_color,
+            (screen_width // 2, screen_height // 2),
+            fixation_radius,
+        )
+        pygame.display.flip()
+
     try:
         # Initial grey screen.
         pygame.time.wait(100)
-        screen.fill(background_color)
-        pygame.display.flip()
+        show_fixation()
         pygame.time.wait(100)
-        screen.fill(background_color)
-        pygame.display.flip()
+        show_fixation()
 
         # Clear board buffer.
         io.discard_eeg()
@@ -501,8 +518,7 @@ def experiment_repetitive_inner_speech(config: dict):
             # *** (2) Post-stimulus delay
 
             # End of stimulus presentation. Display empty screen.
-            screen.fill(background_color)
-            pygame.display.flip()
+            show_fixation()
             t_stim_end_actual = io.now()
 
             io.emit_marker(global_config.stim_end_marker, t_stim_end_actual)
@@ -598,9 +614,8 @@ def experiment_repetitive_inner_speech(config: dict):
             # --------------------------------------------------------------------------
             # *** (5) Inter-trial interval
 
-            # Inter-stimulus interval. Display empty screen.
-            screen.fill(background_color)
-            pygame.display.flip()
+            # Inter-stimulus interval.
+            show_fixation()
 
             # Time until when to show empty screen (post-stimulus delay).
             t_isi_end = (
@@ -620,6 +635,7 @@ def experiment_repetitive_inner_speech(config: dict):
             # *** (6) Inter-block interval
 
             if ((idx_trial + 1) % n_trials_per_block) == 0:
+                show_fixation()
                 # Until when to stay in the inter-block interval.
                 t_ibi_end = io.now() + inter_block_rest_duration
 

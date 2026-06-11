@@ -51,6 +51,9 @@ class EegExperimentConfig:
 
     n_target_events: int
 
+    fixation_radius: int
+    fixation_color: list
+
     stimulus_font_name: str
     stimulus_font_is_bold: bool
     stimulus_font_is_italic: bool

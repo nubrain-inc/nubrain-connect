@@ -63,6 +63,8 @@ def eeg_data_logging(subprocess_params: dict):
     storage_blob_name = subprocess_params["storage_blob_name"]
     storage_bucket_credentials = subprocess_params["storage_bucket_credentials"]
     # Stimulus properties
+    fixation_radius = subprocess_params["fixation_radius"]
+    fixation_color = subprocess_params["fixation_color"]
     stimulus_font_name = subprocess_params["stimulus_font_name"]
     stimulus_font_is_bold = subprocess_params["stimulus_font_is_bold"]
     stimulus_font_is_italic = subprocess_params["stimulus_font_is_italic"]
@@ -123,6 +125,8 @@ def eeg_data_logging(subprocess_params: dict):
         "storage_blob_name": storage_blob_name,
         # "storage_bucket_credentials": storage_bucket_credentials,
         # Stimulus properties
+        "fixation_radius": fixation_radius,
+        "fixation_color": fixation_color,
         "stimulus_font_name": stimulus_font_name,
         "stimulus_font_is_bold": stimulus_font_is_bold,
         "stimulus_font_is_italic": stimulus_font_is_italic,
