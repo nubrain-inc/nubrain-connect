@@ -28,10 +28,7 @@ def run_attention_task(
 
     Returns a dict with keys:
         "log":            attention_task_log (question, answer options, responses)
-        "was_correct":    True / False, or None if the participant quit before
-                          answering
-        "quit_requested": True if the experimenter/participant quit during the
-                          task
+        "quit_requested": True if the experimenter/participant quit during the task
     """
     if stimulus_type == "image":
         question_text = "Which was the last image?"
@@ -89,8 +86,9 @@ def run_attention_task(
     io.drain_eeg()
 
     # Wait for the participant's response.
-    response_log = []
-    response_correct = None  # stays None if the participant quits without answering
+    selected_answer_idx = None  # stays None if the participant quits without answering
+    is_correct = None  # stays None if the participant quits without answering
+    response_time = None  # stays None if the participant quits without answering
     quit_requested = False
     answered = False
 
@@ -107,39 +105,33 @@ def run_attention_task(
                     or pygame.K_KP1 <= event.key <= pygame.K_KP9
                 ):
                     if pygame.K_1 <= event.key <= pygame.K_9:
-                        selected_idx = event.key - pygame.K_1
+                        selected_answer_idx = event.key - pygame.K_1
                     else:
-                        selected_idx = event.key - pygame.K_KP1
+                        selected_answer_idx = event.key - pygame.K_KP1
 
                     # Only accept keys that map to a shown option.
-                    if selected_idx < len(answers):
-                        response_correct = answers[selected_idx]["correct"]
+                    if selected_answer_idx < len(answers):
                         response_time = (pygame.time.get_ticks() - start_ticks) / 1000.0
-                        response_log.append(
-                            {
-                                "selected_answer_idx": selected_idx,
-                                "is_correct": response_correct,
-                                "response_time": response_time,
-                            }
-                        )
+                        is_correct = answers[selected_answer_idx]["correct"]
                         answered = True
 
     attention_task_log = {
         "question": question_text,
         "answers": answers,
-        "response_log": response_log,
+        "selected_answer_idx": selected_answer_idx,
+        "is_correct": is_correct,
+        "response_time": response_time,
     }
 
     # Quit before answering: return without showing feedback.
     if quit_requested:
         return {
             "log": attention_task_log,
-            "was_correct": response_correct,
             "quit_requested": True,
         }
 
     # Feedback (whether the response was correct).
-    if response_correct:
+    if is_correct:
         feedback_text = "Correct"
         feedback_color = (0, 255, 0)  # Green
     else:
@@ -156,7 +148,7 @@ def run_attention_task(
     pygame.time.delay(1000)  # Pause for participant to read the feedback.
 
     # On an incorrect response, show the correct answer.
-    if not response_correct:
+    if not is_correct:
         correct_answer_text = None
         for a_idx, ans_data in enumerate(answers):
             if ans_data["correct"]:
@@ -193,6 +185,5 @@ def run_attention_task(
 
     return {
         "log": attention_task_log,
-        "was_correct": response_correct,
         "quit_requested": False,
     }

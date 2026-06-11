@@ -566,9 +566,9 @@ def experiment_repetitive_inner_speech(config: dict):
 
                 attention_task_log = result["log"]
 
-                if result["was_correct"] is True:
+                if result["log"]["is_correct"] is True:
                     n_target_events_correct += 1
-                elif result["was_correct"] is False:
+                elif result["log"]["is_correct"] is False:
                     n_target_events_incorrect += 1
 
                 if result["quit_requested"]:
