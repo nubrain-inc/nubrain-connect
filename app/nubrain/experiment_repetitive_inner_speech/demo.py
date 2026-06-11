@@ -40,6 +40,9 @@ def demo_repetitive_inner_speech(config: dict):
     n_blocks = config["n_blocks"]
     n_target_events = config["n_target_events"]
 
+    fixation_radius = config["fixation_radius"]
+    fixation_color = config["fixation_color"]
+
     stimulus_font_name = config["stimulus_font_name"]
     stimulus_font_is_bold = config["stimulus_font_is_bold"]
     stimulus_font_is_italic = config["stimulus_font_is_italic"]
@@ -254,14 +257,26 @@ def demo_repetitive_inner_speech(config: dict):
     pygame.display.set_caption("Image Presentation Experiment")
     pygame.mouse.set_visible(False)
 
+    # ----------------------------------------------------------------------------------
+    # *** Fixation dot for rest / blank periods
+
+    def show_fixation():
+        """Fill the background, draw the black fixation dot, and flip the display."""
+        screen.fill(background_color)
+        pygame.draw.circle(
+            screen,
+            fixation_color,
+            (screen_width // 2, screen_height // 2),
+            fixation_radius,
+        )
+        pygame.display.flip()
+
     try:
         # Initial grey screen.
         pygame.time.wait(100)
-        screen.fill(background_color)
-        pygame.display.flip()
+        show_fixation()
         pygame.time.wait(100)
-        screen.fill(background_color)
-        pygame.display.flip()
+        show_fixation()
 
         # Pause for specified number of milliseconds.
         pygame.time.delay(int(round(inter_block_rest_duration * 1000.0)))
@@ -337,8 +352,7 @@ def demo_repetitive_inner_speech(config: dict):
             # *** (2) Post-stimulus delay
 
             # End of stimulus presentation. Display empty screen.
-            screen.fill(background_color)
-            pygame.display.flip()
+            show_fixation()
             t_stim_end_actual = io.now()
 
             # Show empty screen for the post-stimulus delay.
@@ -407,8 +421,7 @@ def demo_repetitive_inner_speech(config: dict):
             # *** (5) Inter-trial interval
 
             # Inter-stimulus interval. Display empty screen.
-            screen.fill(background_color)
-            pygame.display.flip()
+            show_fixation()
 
             # Time until when to show empty screen (post-stimulus delay).
             t_isi_end = (
@@ -467,3 +480,15 @@ def demo_repetitive_inner_speech(config: dict):
     finally:
         pygame.quit()
         print("Experiment closed.")
+
+
+if __name__ == "__main__":
+    from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
+        load_config_repetitive_inner_speech_yaml,
+    )
+
+    input_file_path = (
+        "/home/john/Downloads/experiment_config_demo_repetitive_inner_speech.yaml"
+    )
+    config = load_config_repetitive_inner_speech_yaml(yaml_file_path=input_file_path)
+    demo_repetitive_inner_speech(config=config)

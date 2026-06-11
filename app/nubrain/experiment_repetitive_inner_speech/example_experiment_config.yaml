@@ -37,6 +37,9 @@ n_blocks: 4
 
 n_target_events: 10
 
+fixation_radius: 6
+fixation_color: [0, 0, 0]
+
 stimulus_font_name: "nimbussans"
 stimulus_font_is_bold: False
 stimulus_font_is_italic: False
