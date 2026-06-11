@@ -2,6 +2,9 @@ import argparse
 import os
 
 from nubrain.experiment_image.load_config import load_config_image_yaml
+from nubrain.experiment_repetitive_inner_speech.demo import (
+    demo_repetitive_inner_speech,
+)
 from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
     load_config_repetitive_inner_speech_yaml,
 )
@@ -200,8 +203,7 @@ def main():
         if mode == "data_collection_repetitive_inner_speech":
             experiment_repetitive_inner_speech(config=config)
         elif mode == "demo_repetitive_inner_speech":
-            # demo_repetitive_inner_speech(config=config)
-            raise NotImplementedError
+            demo_repetitive_inner_speech(config=config)
         else:
             raise AssertionError
     elif mode == "eeg_to_image":
