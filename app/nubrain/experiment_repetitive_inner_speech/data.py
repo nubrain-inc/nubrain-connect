@@ -351,33 +351,36 @@ def eeg_data_logging(subprocess_params: dict):
                         hdf5_targets_data = file["targets"]
                         data_to_write_target = np.empty((1,), dtype=targets_dtype)
 
-                        # Fetch the task log, defaulting to an empty dict if it somehow
-                        # arrived as None.
-                        attention_task_log = (
-                            new_stimulus_data.get("attention_task_log") or {}
-                        )
-                        response_log = attention_task_log.get("response_log") or {}
-
                         # Write relational key.
                         data_to_write_target[0]["idx_trial"] = new_stimulus_data[
                             "idx_trial"
                         ]
 
+                        attention_task_log = new_stimulus_data["attention_task_log"]
+                        # attention_task_log:
+                        # {
+                        #     "question": question_text,
+                        #     "answers": answers,
+                        #     "selected_answer_idx": selected_answer_idx,
+                        #     "is_correct": is_correct,
+                        #     "response_time": response_time,
+                        # }
+
                         data_to_write_target[0]["attention_task_question"] = (
-                            attention_task_log.get("question", "")
+                            attention_task_log["question"] or ""
                         )
                         data_to_write_target[0]["attention_task_answer_options"] = (
-                            json.dumps(attention_task_log.get("answers", []))
+                            json.dumps(attention_task_log["answers"] or "")
                         )
                         # Integer data type does not support nan value, use -1 instead.
                         data_to_write_target[0][
                             "attention_task_selected_answer_idx"
-                        ] = response_log.get("selected_answer_idx", -1)
+                        ] = attention_task_log["selected_answer_idx"] or -1
                         data_to_write_target[0]["attention_task_is_correct"] = (
-                            response_log.get("is_correct", False)
+                            attention_task_log["is_correct"] or False
                         )
                         data_to_write_target[0]["attention_task_response_time"] = (
-                            response_log.get("response_time", np.nan)
+                            attention_task_log["response_time"] or np.nan
                         )
 
                         hdf5_targets_data[target_counter] = data_to_write_target
