@@ -168,8 +168,8 @@ def experiment_repetitive_inner_speech(config: dict):
     # Indices of target events.
     target_trial_idcs = sample_with_min_distance(
         n_samples=n_target_events,
-        lower=10,  # No targets at very beginning
-        upper=(n_trials - 10),  # No targets at the very end
+        lower=5,  # No targets at very beginning
+        upper=(n_trials - 5),  # No targets at the very end
         min_distance=1,
     )
 
