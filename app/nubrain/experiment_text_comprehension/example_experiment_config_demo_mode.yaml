@@ -5,7 +5,7 @@ lsl_stream_name: "Ignored in demo mode" # LSL stream name from DSI-Streamer
 utility_frequency: 50.0 # Ignored in demo mode
 
 output_directory: "/home/john/Downloads"
-path_stimuli: "/home/john/Dropbox/Start_Ups/nubrain/data/stimuli/text/comprehension_questions/Doyle_1905_The_Return_of_Sherlock_Holmes_short_demo.json"
+stimulus_directory: "/home/john/Dropbox/Start_Ups/nubrain/data/stimuli/text/comprehension_questions/"
 
 # Storage bucket where to upload hdf5 file at the end of each run
 storage_bucket_name: "Ignored in demo mode"
