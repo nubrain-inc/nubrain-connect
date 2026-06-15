@@ -1,4 +1,6 @@
+import json
 import os
+import traceback
 from dataclasses import dataclass, field, fields
 from typing import Dict, Optional, Union, get_args, get_origin
 
@@ -23,7 +25,7 @@ class EegExperimentConfig:
     # session_id: str
 
     output_directory: str
-    path_stimuli: str
+    stimulus_directory: str
 
     storage_bucket_name: str
     storage_blob_name: str
@@ -164,5 +166,48 @@ def load_config_text_comprehension_yaml(*, yaml_file_path: str):
 
     # Validate config.
     config_dataclass = EegExperimentConfig(**config_dict)
+
+    # Get input filepaths (JSON files containing text sections, questions, and answers).
+    filenames_json_input = [
+        filepath
+        for filepath in os.listdir(config_dict["stimulus_directory"])
+        if filepath.endswith(".json")
+    ]
+
+    if len(filenames_json_input) == 0:
+        raise AssertionError(
+            f"No stimulus JSON files found at: {config_dict['stimulus_directory']}"
+        )
+
+    # For each JSON input file, check the number of chapters. The chapter names shown in
+    # the GUI will be the input filenames.
+    chapters = []
+    for filename_json_input in filenames_json_input:
+        path_json_input = os.path.join(
+            config_dict["stimulus_directory"], filename_json_input
+        )
+        try:
+            chapter_name = filename_json_input.split(".")[0].replace("_", " ")
+            with open(path_json_input, "r", encoding="utf-8") as file:
+                json_data = json.load(file)
+            text_section = json_data["stimulus_data"]
+            n_runs = len(
+                text_section
+            )  # Number of text sections = maximum number of runs
+            chapters.append(
+                {
+                    "chapter_name": chapter_name,
+                    "n_runs": n_runs,
+                    "path_json": path_json_input,
+                }
+            )
+        except Exception as e:
+            raise AssertionError(
+                f"Failed to load stimuli: {path_json_input} | "
+                + f"Exception: {e}\n"
+                + f"Traceback:\n{traceback.format_exc()}"
+            )
+
+    config_dict["chapters"] = chapters
 
     return config_dict

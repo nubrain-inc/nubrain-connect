@@ -5,7 +5,7 @@ lsl_stream_name: "WS-default" # LSL stream name from DSI-Streamer
 utility_frequency: 50.0 # Hz
 
 output_directory: "C:/Users/nubra/Documents/recordings_text_v1"
-path_stimuli: "C:/Users/nubra/Documents/text/example.json"
+stimulus_directory: "C:/Users/nubra/Documents/text/"
 
 # Storage bucket where to upload hdf5 file at the end of each run
 storage_bucket_name: "nubrain-eeg"

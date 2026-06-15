@@ -2,6 +2,7 @@ import argparse
 import os
 
 from nubrain.experiment_common.gui import SessionConfigEditor
+from nubrain.experiment_common.gui_chapters import SessionConfigEditorChapters
 from nubrain.experiment_image.load_config import load_config_image_yaml
 from nubrain.experiment_repetitive_inner_speech.demo import (
     demo_repetitive_inner_speech,
@@ -162,7 +163,10 @@ def main():
             "experiment_text_comprehension",
             "session_config.yaml",
         )
-        gui = SessionConfigEditor(session_config_path=session_config_path)
+        gui = SessionConfigEditorChapters(
+            session_config_path=session_config_path,
+            chapters=config["chapters"],
+        )
         session_config = gui.run()
         if session_config is None:
             # User pressed the cancel button.
