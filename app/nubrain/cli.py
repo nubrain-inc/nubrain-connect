@@ -1,6 +1,7 @@
 import argparse
 import os
 
+from nubrain.experiment_common.gui import SessionConfigEditor
 from nubrain.experiment_image.load_config import load_config_image_yaml
 from nubrain.experiment_repetitive_inner_speech.demo import (
     demo_repetitive_inner_speech,
@@ -16,7 +17,6 @@ from nubrain.experiment_text_comprehension.map_config import (
     map_session_config_comprehension_condition,
 )
 from nubrain.experiment_text_targets.demo import text_demo_targets
-from nubrain.experiment_text_targets.gui import SessionConfigEditor
 from nubrain.experiment_text_targets.load_experiment_config import (
     load_config_text_targets_yaml,
 )
