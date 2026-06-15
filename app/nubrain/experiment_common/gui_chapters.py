@@ -76,7 +76,7 @@ class SessionConfigEditorChapters:
         # {"Example Name": 10, ...}
         self.runs_per_chapter = {x["chapter_name"]: x["n_runs"] for x in self.chapters}
         # Create mapping from chapter names to JSON input files:
-        self.json_paths = {x["chapter_name"]: x["json_paths"] for x in self.chapters}
+        self.json_paths = {x["chapter_name"]: x["path_json"] for x in self.chapters}
 
         self.start_button_press = False
 
