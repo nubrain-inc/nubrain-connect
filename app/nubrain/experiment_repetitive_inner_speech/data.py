@@ -47,7 +47,6 @@ def eeg_data_logging(subprocess_params: dict):
     stimulus_duration = subprocess_params["stimulus_duration"]
     post_stim_interval = subprocess_params["post_stim_interval"]
     n_repetitions_per_trial = subprocess_params["n_repetitions_per_trial"]
-    cue_duration = subprocess_params["cue_duration"]
     repeat_duration = subprocess_params["repeat_duration"]
     inter_trial_interval = subprocess_params["inter_trial_interval"]
     inter_trial_jitter = subprocess_params["inter_trial_jitter"]
@@ -109,7 +108,6 @@ def eeg_data_logging(subprocess_params: dict):
         "stimulus_duration": stimulus_duration,
         "post_stim_interval": post_stim_interval,
         "n_repetitions_per_trial": n_repetitions_per_trial,
-        "cue_duration": cue_duration,
         "repeat_duration": repeat_duration,
         "inter_trial_interval": inter_trial_interval,
         "inter_trial_jitter": inter_trial_jitter,
