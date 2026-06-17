@@ -10,6 +10,9 @@ from nubrain.experiment_repetitive_inner_speech.demo import (
 from nubrain.experiment_repetitive_inner_speech.load_experiment_config import (
     load_config_repetitive_inner_speech_yaml,
 )
+from nubrain.experiment_repetitive_inner_speech.map_config import (
+    map_session_config_ris_condition,
+)
 from nubrain.experiment_text_comprehension.demo import text_demo_comprehension
 from nubrain.experiment_text_comprehension.load_experiment_config import (
     load_config_text_comprehension_yaml,
@@ -200,7 +203,7 @@ def main():
             print("Cancelled.")
             return None
         # Map values (subject, session, run) from session config to experiment config.
-        config = map_session_config_comprehension_condition(
+        config = map_session_config_ris_condition(
             session_config=session_config,
             experiment_config=config,
         )
