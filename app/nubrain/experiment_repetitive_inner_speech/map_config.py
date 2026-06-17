@@ -17,6 +17,4 @@ def map_session_config_ris_condition(  # ris = repetitive inner speech
     experiment_config["subject_id"] = subject_id
     experiment_config["session_id"] = session_id
 
-    experiment_config["path_stimuli"] = session_config["path_stimuli"]
-
     return experiment_config
