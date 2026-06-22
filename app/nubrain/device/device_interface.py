@@ -174,9 +174,7 @@ class DSI24Device(EEGDeviceInterface):
         # Try to resolve by name first, then by type.
         streams = self.resolve_byprop("name", self.lsl_stream_name, timeout=5.0)
         if not streams:
-            print(
-                f"No stream found with name '{self.lsl_stream_name}', trying type 'EEG'"
-            )
+            print(f"No stream found with name '{self.lsl_stream_name}'")
             streams = self.resolve_byprop("type", "EEG", timeout=5.0)
 
         if not streams:
@@ -196,6 +194,19 @@ class DSI24Device(EEGDeviceInterface):
         full_info = self.inlet.info()
         self.sampling_rate = full_info.nominal_srate()
         self.n_channels = full_info.channel_count()
+
+        expected_sampling_rate = 600
+        if int(self.sampling_rate) < expected_sampling_rate:
+            raise RuntimeError(
+                f"Sampling rate is {self.sampling_rate}, "
+                f"expected {expected_sampling_rate} | "
+                "Make sure to set correct sampling rate."
+            )
+        if int(self.sampling_rate) > expected_sampling_rate:
+            print(
+                f"WARNING: Sampling rate is {self.sampling_rate}, "
+                f"expected {expected_sampling_rate}"
+            )
 
         # Try to get channel labels from the stream.
         self.channel_labels = full_info.get_channel_labels()
